@@ -1,0 +1,16 @@
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+num_processes: 4 # 根据你可用的GPU数量进行修改
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+fsdp_config:
+    fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+    fsdp_sharding_strategy: FULL_SHARD
+    fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+    fsdp_state_dict_type: SHARDED_STATE_DICT
+    fsdp_offload_params: false
+    fsdp_backward_prefetch: BACKWARD_PRE
+    fsdp_use_orig_params: false
+mixed_precision: bf16 # 推荐使用bf16，如果你的GPU不支持，请改为fp16

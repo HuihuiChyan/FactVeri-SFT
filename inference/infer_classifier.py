@@ -63,6 +63,12 @@ if __name__ == "__main__":
         # default="/home/huanghui/Search-R1/results/bamboogle_test-Qwen_Qwen2.5-7B-Instruct-local_retrieval.jsonl",
         help="Path to save the output JSONL file.",
     )
+    parser.add_argument(
+        "--scheme",
+        type=str,
+        choices=("pairwise", "pointwise"),
+        default="pairwise",
+    )
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
@@ -74,10 +80,16 @@ if __name__ == "__main__":
         labels = []
         for line in tqdm.tqdm(lines):
             if "model_output_trace" not in line.keys():
-                inputs = tokenizer.apply_chat_template([
-                    {"role": "user", "content": line["question"]},
-                    {"role": "assistant", "content": line["response"]},
-                ], tokenize=False)
+                if args.scheme == "pairwise":
+                    inputs = tokenizer.apply_chat_template([
+                        {"role": "user", "content": line["question"]},
+                        {"role": "assistant", "content": f"Response1: {line["response1"]}\nResponse2: {line["response2"]}"},
+                    ], tokenize=False)
+                elif args.scheme == "pointwise":
+                    inputs = tokenizer.apply_chat_template([
+                        {"role": "user", "content": line["question"]},
+                        {"role": "assistant", "content": line["response"]},
+                    ], tokenize=False)
                 inputs = tokenizer(inputs, return_tensors="pt").to(model.device)
             else:
                 model_output_trace = remove_final_verdict(line["model_output_trace"])
@@ -92,5 +104,4 @@ if __name__ == "__main__":
             predictions.append(predicted_class_id)
             labels.append(int(line["label"] == "supported"))
 
-        import pdb;pdb.set_trace()
         accuracy = evaluate_final_results(predictions, labels)

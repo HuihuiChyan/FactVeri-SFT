@@ -62,6 +62,12 @@ def parse_args():
         # default="local_retrieval",
         help="Set the operating mode: 'local_retrieval' for search-based generation, 'direct_gen' for direct answering.",
     )
+    parser.add_argument(
+        "--scheme",
+        type=str,
+        default="pairwise",
+        choices=("pairwise", "pointwise")
+    )
     return parser.parse_args()
 
 
@@ -127,28 +133,38 @@ AVAILABLE_TOOLS = {
 
 
 # --- 结果评估函数 ---
-def extract_final_verdict(model_generated_output: str) -> str:
+def extract_final_verdict(model_generated_output: str, scheme) -> str:
     """
     从模型生成的最终输出中提取结论，处理的是最后一条助手的消息。
     """
     answer_pattern = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
     matches = answer_pattern.findall(model_generated_output)
     if matches:
-        last_answer = matches[-1].strip().lower()
-        if "not real" in last_answer:
-            return "Unsupported"
-        if "real" in last_answer:
-            return "Supported"
+        if scheme == "pointwise":
+            last_answer = matches[-1].strip().lower()
+            if "not real" in last_answer:
+                return "Unsupported"
+            if "real" in last_answer:
+                return "Supported"
+        elif scheme == "pairwise":
+            last_answer = matches[-1].strip().lower()
+            if last_answer == "response1":
+                return "response1"
+            if last_answer == "response2":
+                return "response2"
     return "Inconclusive"
 
 
-def evaluate_final_results(results: List[Dict]):
+def evaluate_final_results(results: List[Dict], scheme):
     """
     计算并打印评估指标。
     """
     y_true, y_pred = [], []
     invalid_predictions = 0
-    label_map = {"supported": 1, "unsupported": 0}
+    if scheme == "pointwise":
+        label_map = {"supported": 1, "unsupported": 0}
+    elif scheme == "pairwise":
+        label_map = {"response1": 0, "response2": 1}        
 
     for item in results:
         true_label_str = item.get("label", "").lower()
@@ -253,20 +269,43 @@ def main():
 
     # --- Prompt模板 ---
     if args.mode == "local_retrieval":
-        prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first every time you get new information. 
+        if args.scheme == "pointwise":
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first every time you get new information. 
 After reasoning, if you find you lack some knowledge, you can call a search engine by <tool_call> query </tool_call> and it will return the top searched results between <tool_response> and </tool_response>. You can search as many times as your want.
 If you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Real/Not Real </answer>'. For example, 'Therefore, the final verdict is: <answer> Real </answer>'. 
-Now, begin your work for the following response: {{response}}"""
-    else:  # direct_gen 模式
-        prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first.
+Now, begin your work for the following question and response:
+Question: {{question}}
+Response: {{response}}"""
+        elif args.scheme == "pairwise":
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine which of the following two responses is more real. You must conduct reasoning first every time you get new information.
+After reasoning, if you find you lack some knowledge, you can call a search engine by <tool_call> query </tool_call> and it will return the top searched results between <tool_response> and </tool_response>. You can search as many times as your want.
+f you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Response1/Response2 </answer>'. For example, 'Therefore, the final verdict is: <answer> Response1 </answer>'.
+Now, begin your work for the following question and responses:
+Question: {{question}}
+Response1: {{response1}}
+Response2: {{response2}}"""
+    else:
+        if args.scheme == "pointwise":
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first.
 After reasoning, you must directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Real/Not Real </answer>'. For example, 'Therefore, the final verdict is: <answer> Real </answer>'.
-Now, begin your work for the following response: {{response}}"""
-
+Now, begin your work for the following question and response:
+Question: {{question}}
+Response: {{response}}"""
+        elif args.scheme == "pairwise":
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine which of the following two responses is more real. You must conduct reasoning first.
+After reasoning, you must directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Response1/Response2 </answer>'. For example, 'Therefore, the final verdict is: <answer> Response1 </answer>'.
+Now, begin your work for the following question and responses:
+Question: {{question}}
+Response1: {{response1}}
+Response2: {{response2}}"""
     # --- 初始化工作队列 ---
     # 核心的数据结构，用于管理每个任务的状态。
     jobs = []
     for i, item in enumerate(input_data):
-        input_content = prompt_template.format(response=item["response"])
+        if args.scheme == "pointwise":
+            input_content = prompt_template.format(question=item["question"], response=item["response"])
+        elif args.scheme == "pairwise":
+            input_content = prompt_template.format(question=item["question"], response1=item["response1"], response2=item["response2"])
         jobs.append(
             {
                 "id": i,
@@ -337,39 +376,6 @@ Now, begin your work for the following response: {{response}}"""
             
             # 将当前批次的结果添加到总结果列表中
             results.extend(results_batch)
-
-        # # SGLang 引擎在这里一次性处理所有 active_jobs
-        # results = engine.generate(
-        #     input_ids=input_ids_batch, sampling_params=sampling_params
-        # )
-
-        # # 下面这个把生成改成async模式这样的话可以加上tqdm bar
-        # async def generate_with_progress(input_ids_batch):
-        #     """
-        #     使用异步方式生成文本，并显示进度条。
-
-        #     Args:
-        #         input_ids_batch: 包含多个输入ID的列表。
-
-        #     Returns:
-        #         一个包含所有生成结果的列表。
-        #     """
-        #     print("Start generating!")
-
-        #     # Await the coroutine to get the actual async iterable.
-        #     # The parentheses are necessary to distinguish this from the async generator version.
-        #     async_iterator = await engine.async_generate(
-        #         input_ids=input_ids_batch, 
-        #         sampling_params=sampling_params
-        #     )
-
-        #     # Now, pass the async iterator to tqdm.asyncio.tqdm
-        #     all_results = [result async for result in tqdm.asyncio.tqdm(async_iterator)]
-
-        #     print("Finish generating!")
-        #     return all_results
-        
-        # results = asyncio.run(generate_with_progress(input_ids_batch))
 
         # 3. 处理结果并准备工具调用
         jobs_requiring_tool_calls = []
@@ -478,7 +484,7 @@ Now, begin your work for the following response: {{response}}"""
                     final_assistant_message = msg["content"]
                     break
 
-            final_verdict = extract_final_verdict(final_assistant_message)
+            final_verdict = extract_final_verdict(final_assistant_message, scheme=args.scheme)
 
             result_item = {
                 **job["original_item"],
@@ -501,7 +507,7 @@ Now, begin your work for the following response: {{response}}"""
 
     # --- 评估 ---
     logging.info("Starting evaluation...")
-    metrics = evaluate_final_results(final_results)
+    metrics = evaluate_final_results(final_results, scheme=args.scheme)
     if metrics:
         logging.info(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
 

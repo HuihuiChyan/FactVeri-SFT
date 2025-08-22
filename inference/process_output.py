@@ -1,8 +1,9 @@
 import json
 
-INPUT = "/workspace/Search-R1/results/nq_hotpot_train_head_test_local_retrieval_merged.jsonl"
-OUTPUT_FULL = "/workspace/LLaMA-Factory/data/nq_hotpot_train_head_test_local_retrieval_full_trace.json"
-OUTPUT_NO = "/workspace/LLaMA-Factory/data/nq_hotpot_train_head_test_local_retrieval_no_trace.json"
+SCHEME = "pairwise"
+MODE = "local_retrieval"
+INPUT = f"./results/nq_hotpot_train_head_pairwise-Qwen2.5-7B-Instruct-{MODE}-{SCHEME}.jsonl"
+OUTPUT = f"./data/nq_hotpot_train_head_pairwise-Qwen2.5-7B-Instruct-{MODE}-{SCHEME}_full_trace.json"
 
 def extract_dialogue(text):
     """
@@ -45,12 +46,10 @@ def remove_final_verdict(text):
     return text   
 
 with open(INPUT, "r", encoding="utf-8") as fin,\
-open(OUTPUT_FULL, "w", encoding="utf-8") as fout_full,\
-open(OUTPUT_NO, "w", encoding="utf-8") as fout_no:
+open(OUTPUT, "w", encoding="utf-8") as fout:
     lines = [json.loads(line.strip()) for line in fin.readlines()]
 
-    output_lines_full = []
-    output_lines_no = []
+    output_lines = []
 
     for line in lines:
         dialogue = extract_dialogue(line["model_output_trace"])
@@ -73,30 +72,17 @@ open(OUTPUT_NO, "w", encoding="utf-8") as fout_no:
             if i == len(dialogue)-1:
                 turn["value"] = remove_final_verdict(turn["value"])
 
-        if line["final_verdict"].lower() != line["label"]:
-            continue
+        if SCHEME == "pairwise":
+            verify_result = int(line["label"] == "response2")
+        else:
+            verify_result = int(line["label"] == "supported")            
+
         new_line = {
             "conversations": dialogue[1:],
             "system": dialogue[0]["content"],
-            "verify_result": int(line["label"] == "supported"),
+            "verify_result": verify_result,
         }
-        output_lines_full.append(new_line)
+        output_lines.append(new_line)
 
-        new_no_line = {
-            "conversations": [
-                {
-                    "from": "human",
-                    "value": line["question"],
-                },
-                {
-                    "from": "gpt",
-                    "value": line["response"],                    
-                }
-            ],
-            "verify_result": int(line["label"] == "supported"),
-        }
-        output_lines_no.append(new_no_line)
-
-    print(f"Totally {len(output_lines_no)} lines.")
-    json.dump(output_lines_full, fout_full, indent=4)
-    json.dump(output_lines_no, fout_no, indent=4)
+    print(f"Totally {len(output_lines)} lines.")
+    json.dump(output_lines, fout, indent=4)

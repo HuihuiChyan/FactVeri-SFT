@@ -1,7 +1,7 @@
 export CUDA_VISIBLE_DEVICES=0,1
 
 INPUT_MODEL="/workspace/HFModels/Qwen2.5-3B-Instruct"
-INPUT=nq_hotpot_train_head_test_local_retrieval_full_trace
+INPUT=nq_hotpot_train_head_pairwise-Qwen2.5-7B-Instruct-local_retrieval-pairwise_full_trace
 PROMPT_TEMPLATE="qwen"
 OUTPUT_DIR=$INPUT_MODEL-$INPUT
 LENGTH=4096

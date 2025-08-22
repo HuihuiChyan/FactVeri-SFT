@@ -166,7 +166,7 @@ def load_model(
                 load_class = AutoModelForTextToWaveform
             else:
                 import sys
-                sys.path.append("/workspace/LLaMA-Factory/src/llamafactory/model")
+                sys.path.append("/workspace/FactVeri-SFT/src/llamafactory/model")
                 from modeling_gencls import Qwen2ForGenCLS
                 load_class = Qwen2ForGenCLS
                 # load_class = AutoModelForCausalLM
