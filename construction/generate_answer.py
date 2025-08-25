@@ -326,14 +326,14 @@ Plrease direct generate the combined statement. Do not generate any other openin
                 "question": line["question"],
                 "answer1": {"answer": positive_statement},
                 "answer2": {"answer": negative_statement},
-                "better": 0,
+                "verify_result": 0,
             }
         else:
             new_line = {
                 "question": line["question"],
                 "answer1": {"answer": negative_statement},
                 "answer2": {"answer": positive_statement},
-                "better": 1,
+                "verify_result": 1,
             }
         new_lines.append(new_line)
     return new_lines
