@@ -161,7 +161,7 @@ Please first provide your explanation and then, on a new line, provide a final v
 """
 
     # 处理参考答案的格式
-    reference = line.get("reference", "")
+    reference = line["reference"]
     if isinstance(reference, list):
         reference = reference[0] if len(reference) == 1 else str(reference)
     
@@ -269,116 +269,75 @@ def generate_answers_vllm(lines, args):
 
     return lines
 
-def validate_responses(lines, args):
-    prompt_template = """You are a judge evaluating a response. Please score the response on a scale from 1 to 10 based on factuality. Provide a brief explanation for your score.
+def combine_answer(lines, args):
+    prompt_template = """Combine the following question and answer into a coherent statement.
 
-Question: {question}
-Response: {response}
+Example 1:
+Question: Is the following trait inherited or acquired? Katy plays soccer.
+Answer: "inherited"
+Combined Statement: Katy's ability to play soccer is an inherited trait.
 
-Please first provide your explanation, and then conclude your answer with the following format: <Score> score </Score>. For example, <Score> 3 </Score>.
+Example 2:
+Question: Identify the question that Kathleen and Bryant's experiment can best answer.
+Answer: Does Kathleen's snowboard slide down a hill in less time when it has a layer of wax or when it does not have a layer of wax?
+Combined Statement: The question that Kathleen and Bryant's experiment can best answer is "Does Kathleen's snowboard slide down a hill in less time when it has a layer of wax or when it does not have a layer of wax?"
+
+Example 3:
+Question: When was the composer of Carol of the Bells born?
+Answer: January 6, 1876
+Combined Statement: The composer of Carol of the Bells is born on January 6, 1876.
+
+Here are your information:
+Question: {question} 
+Answer: {answer}
+
+Plrease direct generate the combined statement. Do not generate any other openings, closings or explanations.
 """
+    positive_inputs = []
+    negative_inputs = []
+    for line in lines:
+        positive_answer = line["choices"][line["answer"]]
+        negative_choices = list(range(len(line["choices"])))
+        negative_choices.remove(line["answer"])
+        negative_choice = random.choice(negative_choices)
+        negative_answer = line["choices"][negative_choice]
+        positive_inputs.append([{"role": "user", "content": prompt_template.format(question=line["question"], answer=positive_answer)}])
+        negative_inputs.append([{"role": "user", "content": prompt_template.format(question=line["question"], answer=negative_answer)}])
     
-    # Collect all messages for scoring
-    all_messages = []
-    line_answer_indices = []  # Track which line and answer each message corresponds to
-    
-    for line_idx, line in enumerate(lines):
-        if "answers" in line:
-            for answer_idx, answer in enumerate(line["answers"]):
-                messages = [
-                    {"role": "user", "content": prompt_template.format(
-                        question=line['question'], 
-                        response=answer["answer"]
-                    )}
-                ]
-                all_messages.append(messages)
-                line_answer_indices.append((line_idx, answer_idx))
-    
-    print(f"Scoring {len(all_messages)} answers...")
-    
-    # Get responses from the scoring model
+    inputs = positive_inputs + negative_inputs
+
     if args.multi_process == "False":
-        responses = []
-        for messages in tqdm.tqdm(all_messages):
-            response = request_gpt(messages, model=args.model_path, temperature=args.temperature)
-            responses.append(response)
+        combined_statements = []
+        for line in tqdm.tqdm(inputs):
+            combined_statement = request_gpt(line, model=args.model_path, temperature=args.temperature)
+            combined_statements.append(combined_statement)
     else:
         pool_fn = partial(request_gpt, model=args.model_path, temperature=args.temperature)
-        responses = pool.map(pool_fn, all_messages)
-    
-    # Extract scores and reasons, then add them to the original data
-    for i, response in enumerate(responses):
-        line_idx, answer_idx = line_answer_indices[i]
+        combined_statements = pool.map(pool_fn, inputs)
         
-        if response:
-            # Extract score from response
-            score = None
-            score_reason = response
-            
-            # Try to extract score from <score> tags
-            if "<Score>" in response and "</Score>" in response:
-                try:
-                    score_text = response.split("<Score>")[1].split("</Score>")[0].strip()
-                    score = float(score_text)
-                except (IndexError, ValueError):
-                    # If extraction fails, try to find a number in the last line
-                    try:
-                        last_line = response.strip().split('\n')[-1]
-                        import re
-                        numbers = re.findall(r'\d+(?:\.\d+)?', last_line)
-                        if numbers:
-                            score = float(numbers[-1])
-                    except:
-                        score = None
-            
-            # Add score and score_reason to the answer
-            lines[line_idx]["answers"][answer_idx]["score"] = score
-            lines[line_idx]["answers"][answer_idx]["score_reason"] = score_reason
+    positive_statements = combined_statements[:len(combined_statements)//2]
+    negative_statements = combined_statements[len(combined_statements)//2:]
+    new_lines = []
+    for i, line in enumerate(lines):
+        positive_statement = positive_statements[i]
+        negative_statement = negative_statements[i]
+        if random.random() > 0.5:
+            new_line = {
+                "question": line["question"],
+                "answer1": {"answer": positive_statement},
+                "answer2": {"answer": negative_statement},
+                "better": 0,
+            }
         else:
-            # Handle case where no response was received
-            lines[line_idx]["answers"][answer_idx]["score"] = None
-            lines[line_idx]["answers"][answer_idx]["score_reason"] = "No response received from scoring model"
-    
-    return lines
+            new_line = {
+                "question": line["question"],
+                "answer1": {"answer": negative_statement},
+                "answer2": {"answer": positive_statement},
+                "better": 1,
+            }
+        new_lines.append(new_line)
+    return new_lines
 
-def select_pairs(lines, args):
-    min_resp_num = 4
-
-    result_pairs = []
-    for line in lines:
-        answers = line["answers"]
-
-        answers = [answer for answer in answers if answer["score"] is not None]
-
-        if len(answers) < min_resp_num:
-            continue
-
-        selected_answers = random.sample(answers, min_resp_num)
-
-        chosen_answer = max(selected_answers, key=lambda x: x["score"])
-        chosen_score = chosen_answer["score"]
-
-        rejected_answer = min(selected_answers, key=lambda x: x["score"])
-        rejected_score = rejected_answer["score"]
-
-        if chosen_score > rejected_score:
-            if random.random() > 0.5:
-                pair_data = {
-                    "question": line.get("question", ""),
-                    "answer1": chosen_answer,
-                    "answer2": rejected_answer,
-                    "better": 0,  # answer_1 is always the chosen one
-                }
-            else:
-                pair_data = {
-                    "question": line.get("question", ""),
-                    "answer1": rejected_answer,
-                    "answer2": chosen_answer,
-                    "better": 1,  # answer_1 is always the chosen one
-                }                
-            result_pairs.append(pair_data)
-
-    return result_pairs
 
 if __name__ == "__main__":
 
@@ -432,7 +391,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--phase",
         type=str,
-        choices=("filtering", "generation", "scoring", "selection", "verification")
+        choices=("filtering", "generation", "combination", "verification")
     )
     parser.add_argument(
         "--candidate-num",
@@ -459,12 +418,9 @@ if __name__ == "__main__":
         elif args.model_type == "api":
             lines = generate_answers_api(lines, args)
 
-    elif args.phase == "scoring":
+    elif args.phase == "combination":
         assert args.model_type == "api"
-        lines = score_responses(lines, args)
-
-    elif args.phase == "selection":
-        lines = select_pairs(lines, args)
+        lines = combine_answer(lines, args)
 
     elif args.phase == "verification":
         if args.model_type == "vllm":
