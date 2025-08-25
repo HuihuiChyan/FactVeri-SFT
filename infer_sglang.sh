@@ -2,10 +2,10 @@ export CUDA_VISIBLE_DEVICES=5
 
 model_path=/workspace/HFModels/
 model_name=Qwen2.5-7B-Instruct
-mode=local_retrieval
-scheme=pointwise
-dataset_path=/workspace/FactVeri-data/bamboogle
-dataset_name_without_ext=bamboogle_$scheme
+mode=direct_gen
+scheme=pairwise
+dataset_path=/workspace/FactVeri-SFT/corpora/hotpotqa
+dataset_name_without_ext=hotpotqa_verification
 python -u inference/infer_batch_sglang.py \
     --model_path $model_path/$model_name \
     --input_file $dataset_path/$dataset_name_without_ext.jsonl \

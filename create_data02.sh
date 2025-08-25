@@ -1,6 +1,6 @@
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=6
 
-DATA=bamboogle
+DATA=hotpotqa
 
 # python construction/generate_answer.py \
 #     --model-path "gpt-4o" \
@@ -9,7 +9,7 @@ DATA=bamboogle
 #     --output-file $DATA/$DATA\_filtering.jsonl \
 #     --phase "filtering"
 
-cp ./corpora/$DATA/$DATA\_question.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
+cp ./corpora/$DATA/$DATA\_filtering.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
 
 MODELS=(
     "Llama-3.1-8B-Instruct"
@@ -20,20 +20,20 @@ MODELS=(
     "Qwen2.5-7B-Instruct"
 )
 
-for MODEL in "${MODELS[@]}"; do
-    python construction/generate_answer.py \
-        --model-path /workspace/HFModels/$MODEL \
-        --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --model-type "vllm" \
-        --phase "generation"
-done
+# for MODEL in "${MODELS[@]}"; do
+#     python construction/generate_answer.py \
+#         --model-path /workspace/HFModels/$MODEL \
+#         --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --model-type "vllm" \
+#         --phase "generation"
+# done
 
-python construction/generate_answer.py \
-    --model-path "gpt-4o" \
-    --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-    --output-file ./corpora/$DATA/$DATA\_scoring.jsonl \
-    --phase "scoring"
+# python construction/generate_answer.py \
+#     --model-path "gpt-4o" \
+#     --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#     --output-file ./corpora/$DATA/$DATA\_scoring.jsonl \
+#     --phase "scoring"
 
 python construction/generate_answer.py \
     --model-path "gpt-4o" \

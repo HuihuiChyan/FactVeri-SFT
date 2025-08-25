@@ -137,7 +137,7 @@ def extract_final_verdict(model_generated_output: str, scheme) -> str:
     """
     从模型生成的最终输出中提取结论，处理的是最后一条助手的消息。
     """
-    answer_pattern = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+    answer_pattern = re.compile(r"<verdict>(.*?)</verdict>", re.DOTALL)
     matches = answer_pattern.findall(model_generated_output)
     if matches:
         if scheme == "pointwise":
@@ -148,11 +148,11 @@ def extract_final_verdict(model_generated_output: str, scheme) -> str:
                 return "Supported"
         elif scheme == "pairwise":
             last_answer = matches[-1].strip().lower()
-            if last_answer == "response1":
-                return "response1"
-            if last_answer == "response2":
-                return "response2"
-    return "Inconclusive"
+            if last_answer == "answer1":
+                return 0
+            if last_answer == "answer2":
+                return 1
+    return -1
 
 
 def evaluate_final_results(results: List[Dict], scheme):
@@ -161,26 +161,15 @@ def evaluate_final_results(results: List[Dict], scheme):
     """
     y_true, y_pred = [], []
     invalid_predictions = 0
-    if scheme == "pointwise":
-        label_map = {"supported": 1, "unsupported": 0}
-    elif scheme == "pairwise":
-        label_map = {"response1": 0, "response2": 1}        
 
     for item in results:
-        true_label_str = item.get("label", "").lower()
-        pred_label_str = item.get("final_verdict", "").lower()
+        true_label = item.get("verify_result", "")
+        pred_label = item.get("final_verdict", "")
 
-        if true_label_str in label_map:
-            y_true.append(label_map[true_label_str])
-            if pred_label_str in label_map:
-                y_pred.append(label_map[pred_label_str])
-            else:
-                invalid_predictions += 1
-                y_pred.append(1 - label_map[true_label_str])
-        else:
-            logging.warning(
-                f"Skipping evaluation for an item due to invalid ground truth label: {item.get('label')}"
-            )
+        if pred_label not in [0, 1]:
+            pred_label = 1 - true_label
+        y_true.append(true_label)
+        y_pred.append(pred_label)
 
     if not y_true:
         logging.error("Evaluation failed. No valid ground truth labels found.")
@@ -270,42 +259,43 @@ def main():
     # --- Prompt模板 ---
     if args.mode == "local_retrieval":
         if args.scheme == "pointwise":
-            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first every time you get new information. 
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following answer is real or not. You must conduct reasoning first every time you get new information. 
 After reasoning, if you find you lack some knowledge, you can call a search engine by <tool_call> query </tool_call> and it will return the top searched results between <tool_response> and </tool_response>. You can search as many times as your want.
-If you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Real/Not Real </answer>'. For example, 'Therefore, the final verdict is: <answer> Real </answer>'. 
-Now, begin your work for the following question and response:
+If you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the final verdict is: <verdict> Real/Not Real </verdict>'. For example, 'Therefore, the final verdict is: <verdict> Real </verdict>'. 
+Now, begin your work for the following question and answers:
 Question: {{question}}
-Response: {{response}}"""
+Answer: {{answer}}"""
         elif args.scheme == "pairwise":
-            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine which of the following two responses is more real. You must conduct reasoning first every time you get new information.
+            prompt_template = f"""You are an expert fact-checking assistant. Your task is to determine which of the two provided answers is more factually correct. You must conduct reasoning first every time you get new information.
 After reasoning, if you find you lack some knowledge, you can call a search engine by <tool_call> query </tool_call> and it will return the top searched results between <tool_response> and </tool_response>. You can search as many times as your want.
-f you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Response1/Response2 </answer>'. For example, 'Therefore, the final verdict is: <answer> Response1 </answer>'.
-Now, begin your work for the following question and responses:
+f you find no further external knowledge needed, you can directly provide the final verdict with the format of 'Therefore, the answer with better factuality correctness is: <verdict> Answer1/Answer2 </verdict>'. For example, 'Therefore, the answer with better factuality correctness is: <verdict> Answer1 </verdict>'.
+Now, begin your work for the following question and answers:
 Question: {{question}}
-Response1: {{response1}}
-Response2: {{response2}}"""
+Answer1: {{answer1}}
+Answer2: {{answer2}}"""
     else:
         if args.scheme == "pointwise":
-            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following response is real or not. You must conduct reasoning first.
-After reasoning, you must directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Real/Not Real </answer>'. For example, 'Therefore, the final verdict is: <answer> Real </answer>'.
-Now, begin your work for the following question and response:
+            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following answer is real or not. You must conduct reasoning first.
+After reasoning, you must directly provide the final verdict with the format of 'Therefore, the final verdict is: <verdict> Real/Not Real </verdict>'. For example, 'Therefore, the final verdict is: <verdict> Real </verdict>'.
+Now, begin your work for the following question and answer:
 Question: {{question}}
-Response: {{response}}"""
+Answer: {{answer}}"""
         elif args.scheme == "pairwise":
-            prompt_template = f"""You are an expert fact-checking assistant. Your goal is to determine which of the following two responses is more real. You must conduct reasoning first.
-After reasoning, you must directly provide the final verdict with the format of 'Therefore, the final verdict is: <answer> Response1/Response2 </answer>'. For example, 'Therefore, the final verdict is: <answer> Response1 </answer>'.
-Now, begin your work for the following question and responses:
+            prompt_template = f"""You are an expert fact-checking assistant. Your task is to determine which of the two provided answers is more factually correct. You must conduct reasoning first.
+After reasoning, you must directly provide the final verdict with the format of 'Therefore, the answer with better factuality correctness is: <verdict> Answer1/Answer2 </verdict>'. For example, 'Therefore, the answer with better factuality correctness is: <verdict> Answer1 </verdict>'.
+Now, begin your work for the following question and answers:
 Question: {{question}}
-Response1: {{response1}}
-Response2: {{response2}}"""
+Answer1: {{answer1}}
+Answer2: {{answer2}}"""
+            
     # --- 初始化工作队列 ---
     # 核心的数据结构，用于管理每个任务的状态。
     jobs = []
     for i, item in enumerate(input_data):
         if args.scheme == "pointwise":
-            input_content = prompt_template.format(question=item["question"], response=item["response"])
+            input_content = prompt_template.format(question=item["question"], answer=item["answer"]['answer'])
         elif args.scheme == "pairwise":
-            input_content = prompt_template.format(question=item["question"], response1=item["response1"], response2=item["response2"])
+            input_content = prompt_template.format(question=item["question"], answer1=item["answer1"]['answer'], answer2=item["answer2"]['answer'])
         jobs.append(
             {
                 "id": i,
@@ -485,7 +475,6 @@ Response2: {{response2}}"""
                     break
 
             final_verdict = extract_final_verdict(final_assistant_message, scheme=args.scheme)
-
             result_item = {
                 **job["original_item"],
                 "model_output_trace": full_trace_text,
