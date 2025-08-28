@@ -79,8 +79,9 @@ if __name__ == "__main__":
         predictions = []
         labels = []
         for line in tqdm.tqdm(lines):
-            if "model_output_trace" not in line.keys():
-                if args.scheme == "pairwise":
+            if args.scheme == "pairwise":
+                if "model_output_trace" not in line.keys():
+
                     inputs = tokenizer.apply_chat_template([
                         {"role": "user", "content": line["question"]},
                         {"role": "assistant", "content": f"Response1: {line["response1"]}\nResponse2: {line["response2"]}"},

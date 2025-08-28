@@ -92,7 +92,7 @@ def main():
                         help="训练数据文件的路径")
     parser.add_argument("--output_dir", type=str, default="./results",
                         help="保存训练结果和模型的目录")
-    parser.add_argument("--num_epochs", type=int, default=20,
+    parser.add_argument("--num_epochs", type=int, default=10,
                         help="训练的 epoch 数量")
     parser.add_argument("--train_batch_size", type=int, default=16,
                         help="每个设备的训练批次大小")
@@ -134,7 +134,7 @@ def main():
             features = {}
             features["input_ids1"] = tokenized1["input_ids"]
             features["input_ids2"] = tokenized2["input_ids"]
-            features["labels"] = examples["label"]
+            features["labels"] = examples["verify_result"]
         
         else:
             questions = examples["question"]

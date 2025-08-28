@@ -80,33 +80,29 @@ if __name__ == "__main__":
         labels = []
         i = 0
         for line in tqdm.tqdm(lines):
-            if "model_output_trace" not in line.keys():
+            if "pos_trace" not in line.keys():
                 inputs = tokenizer.apply_chat_template([
                     {"role": "user", "content": line["question"]},
                     {"role": "assistant", "content": line["response"]},
                 ], tokenize=False)
                 inputs = tokenizer(inputs, return_tensors="pt").to(model.device)
             else:
-                model_output_trace = remove_final_verdict(line["model_output_trace"])
-                inputs = tokenizer(model_output_trace, return_tensors="pt").to(model.device)
+                pos_inputs = tokenizer(line["pos_trace"], return_tensors="pt").to(model.device)
+                neg_inputs = tokenizer(line["neg_trace"], return_tensors="pt").to(model.device)
 
             with torch.no_grad():
-                outputs = model(**inputs)
+                pos_outputs = model(**pos_inputs)
+                neg_outputs = model(**neg_inputs)
 
-            prediction = outputs.logits.item()
+            pos_pred = pos_outputs.logits.item()
+            neg_pred = neg_outputs.logits.item()
 
-            if i % 2 == 0:
-                positive_prediction = prediction
+            if pos_pred > neg_pred:
+                predictions.append(0)
             else:
-                negative_prediction = prediction
+                predictions.append(1)
 
-                if positive_prediction > negative_prediction:
-                    predictions.append(0)
-                else:
-                    predictions.append(1)
-
-                labels.append(0)
+            labels.append(0)
                 
-            i += 1
 
         accuracy = evaluate_final_results(predictions, labels)

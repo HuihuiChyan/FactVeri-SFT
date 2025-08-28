@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # 定义 GPU 索引列表，以逗号分隔
-GPU_INDICES="2,5,6"
+GPU_INDICES="0,5,6,7"
 
 # 定义其他参数
-input_file="/workspace/FactVeri-data/nq_hotpot_train/nq_hotpot_train_head_test.jsonl"
+input_file="/workspace/FactVeri-SFT/corpora/nq_hotpot_train_head/nq_hotpot_train_head_testset.jsonl"
 model_path="/workspace/HFModels/Qwen2.5-7B-Instruct"
 mode="local_retrieval"
-output_prefix="./results/nq_hotpot_train_head_test_$mode" # 统一的前缀
+scheme="pointwise"
+output_prefix="./results/nq_hotpot_train_head_${scheme}_${mode}" # 统一的前缀
 
 # 将 GPU 索引字符串分割成数组
 IFS=',' read -r -a gpu_array <<< "$GPU_INDICES"
@@ -33,31 +34,36 @@ echo "Using temporary directory: $temp_dir"
     
 #     # 为每个分片构建独立的输出文件路径
 #     output_file="${output_prefix}_gpu${gpu_idx}.jsonl"
-#     log_file="./log/log_gpu${gpu_idx}.log"
+#     log_file="./logs/log_gpu${gpu_idx}.log"
 
 #     # 在后台运行推理脚本，并将分片文件作为输入
-#     CUDA_VISIBLE_DEVICES=$gpu_idx python -u infer_batch_sglang.py \
+#     CUDA_VISIBLE_DEVICES=$gpu_idx python -u inference/infer_batch_sglang.py \
 #         --model_path "$model_path" \
 #         --input_file "$shard_file" \
 #         --output_file "$output_file" \
-#         --mode "$mode" > $log_file &
+#         --mode "$mode" \
+#         --scheme $scheme > $log_file &
 # done
 
 # # 3. 等待所有子进程完成
 # echo "Waiting for all processes to complete..."
 # wait
 
-# 4. 合并所有分片后的结果文件
-echo "All processes completed. Merging results..."
-merged_output_file="${output_prefix}_merged.jsonl"
-rm -f "$merged_output_file"
+# # 4. 合并所有分片后的结果文件
+# echo "All processes completed. Merging results..."
+# merged_output_file="${output_prefix}_merged.jsonl"
+# rm -f "$merged_output_file"
 
-# 使用 find 和 xargs 按序合并，确保最终结果顺序正确
-find ./ -type f -wholename "${output_prefix}_gpu*.jsonl" | sort | xargs cat >> "$merged_output_file"
+# # 使用 find 和 xargs 按序合并，确保最终结果顺序正确
+# find ./ -type f -wholename "${output_prefix}_gpu*.jsonl" | sort | xargs cat >> "$merged_output_file"
 
-# 清理临时文件和分片输出文件
-echo "Cleaning up temporary files..."
-# rm -rf "$temp_dir"
-# rm ./results/${output_prefix}_gpu*.jsonl
+# # 清理临时文件和分片输出文件
+# echo "Cleaning up temporary files..."
+# # rm -rf "$temp_dir"
+# # rm ./results/${output_prefix}_gpu*.jsonl
 
-echo "Merging complete. Final output is at: $merged_output_file"
+# echo "Merging complete. Final output is at: $merged_output_file"
+
+python -u inference/convert_pointwise_to_pairwise_trace.py \
+    --input_file ./${output_prefix}_merged.jsonl \
+    --output_file ./${output_prefix}_merged-trace.json
