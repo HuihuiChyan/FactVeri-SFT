@@ -8,7 +8,7 @@ import os
 import asyncio
 import tqdm
 
-# 导入 sglang 相关的库
+# Import sglang libraries
 import sglang as sgl
 from sglang.srt.function_call.function_call_parser import FunctionCallParser
 from sglang.srt.managers.io_struct import Tool, Function
@@ -22,9 +22,9 @@ from sklearn.metrics import (
 )
 
 
-# --- 命令行参数解析 ---
+# --- Command-line Argument Parsing ---
 def parse_args():
-    """解析命令行参数，这部分保持不变。"""
+    """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Batch inference script for fact-checking model using SGLang."
     )
@@ -61,13 +61,14 @@ def parse_args():
     parser.add_argument(
         "--scheme",
         type=str,
-        default="pairwise",
-        choices=("pairwise", "pointwise")
+        default="best_of_n",
+        choices=["best_of_n", "pointwise"],
+        help="Evaluation scheme. 'best_of_n' is for selecting the best answer from a list."
     )
     return parser.parse_args()
 
 
-# --- 工具定义与实现 ---
+# --- Tool Definition & Implementation ---
 SEARCH_TOOL_DEFINITION = [
     {
         "type": "function",
@@ -91,14 +92,14 @@ SEARCH_TOOL_DEFINITION = [
 
 def search_api_call(queries: List[str]) -> List[str]:
     """
-    工具的具体实现。接受一个查询列表以支持批量操作。
+    The implementation of the search tool. Accepts a list of queries for batch processing.
     """
     if not queries:
         return []
     payload = {"queries": queries, "topk": 3, "return_scores": True}
     try:
         response = requests.post(
-            "http://127.0.0.1:8000/retrieve", json=payload, timeout=20
+            "http://127.0.0.1:8000/retrieve", json=payload, timeout=2000
         )
         response.raise_for_status()
         results_list = response.json()["result"]
@@ -118,66 +119,53 @@ def search_api_call(queries: List[str]) -> List[str]:
     return [_passages2string(results) for results in results_list]
 
 
-# --- 结果评估函数 ---
-def extract_final_verdict(model_generated_output: str, scheme) -> str:
+# --- Result Evaluation Functions ---
+def extract_final_verdict(model_generated_output: str) -> int:
     """
-    从模型生成的最终输出中提取结论。
+    Extracts the final verdict from the model's output, expecting formats like <verdict>Answer1</verdict>.
+    Returns a zero-based index (e.g., "Answer1" -> 0).
     """
-    answer_pattern = re.compile(r"<verdict>(.*?)</verdict>", re.DOTALL)
+    # Updated pattern to capture the number from "AnswerX"
+    answer_pattern = re.compile(r"<verdict>Answer(\d+)</verdict>", re.IGNORECASE | re.DOTALL)
     matches = answer_pattern.findall(model_generated_output)
     if matches:
-        last_answer = matches[-1].strip().lower()
-        if scheme == "pointwise":
-            if "not real" in last_answer:
-                return 0
-            if "real" in last_answer:
-                return 1
-        elif scheme == "pairwise":
-            if last_answer == "answer1":
-                return 0
-            if last_answer == "answer2":
-                return 1
-    return -1
-
-
-def extract_evaluation_result(model_generated_output: str) -> Dict[str, str]:
-    """
-    从模型生成的评估输出中提取评估结果。
-    """
-    evaluation_pattern = re.compile(r"<evaluation>(.*?)</evaluation>", re.DOTALL)
-    matches = evaluation_pattern.findall(model_generated_output)
-    
-    if matches:
-        evaluation_text = matches[-1].strip()
-        useful_match = re.search(r"Useful:\s*(Yes|No)", evaluation_text, re.IGNORECASE)
-        useful = useful_match.group(1).lower() == "yes" if useful_match else False
-        summary_match = re.search(r"Summary:\s*(.*)", evaluation_text, re.DOTALL)
-        summary = summary_match.group(1).strip() if summary_match else "No summary provided."
-        return {"useful": useful, "summary": summary}
-    
-    return {"useful": False, "summary": "No evaluation found."}
+        try:
+            # Get the last match and convert it to a zero-based index
+            answer_index = int(matches[-1])
+            return answer_index - 1
+        except (ValueError, IndexError):
+            return -1 # Return -1 if parsing fails
+    return -1 # Return -1 if no match is found
 
 
 def check_ready_for_evaluation(model_generated_output: str) -> bool:
     """
-    检查模型是否表示准备好进行评估（不需要更多搜索）。
+    Checks if the model is ready for evaluation (i.e., no more searching needed).
     """
-    return "READY_FOR_EVALUATION" in model_generated_output
+    return "READY_FOR_EVALUATION" in model_generated_output or "READY_FOR_ANSWERING" in model_generated_output
 
 
-def evaluate_final_results(results: List[Dict], scheme):
+def evaluate_final_results(results: List[Dict]):
     """
-    计算并打印评估指标。
+    Calculates and prints evaluation metrics for a multi-class (best-of-N) scenario.
     """
     y_true, y_pred = [], []
     invalid_predictions = 0
+    num_classes = 0
+    if results:
+        # Determine the number of classes from the first item's answers list
+        num_classes = len(results[0].get("answers", []))
 
     for item in results:
-        true_label = item.get("verify_result", "")
-        pred_label = item.get("final_verdict", "")
+        true_label = item.get("verify_result")
+        pred_label = item.get("final_verdict")
 
-        if pred_label not in [0, 1]:
-            pred_label = 1 - true_label
+        if true_label is None:
+            continue # Skip items without a ground truth label
+
+        # Handle invalid predictions
+        if pred_label == -1 or pred_label >= num_classes:
+            pred_label = 0  # Default to the first choice for metric calculation
             invalid_predictions += 1
 
         y_true.append(true_label)
@@ -187,12 +175,13 @@ def evaluate_final_results(results: List[Dict], scheme):
         logging.error("Evaluation failed. No valid ground truth labels found.")
         return None
 
+    # Use 'macro' average for multi-class precision, recall, and F1
     metrics_dict = {
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
         "balanced_accuracy": round(balanced_accuracy_score(y_true, y_pred), 4),
-        "precision": round(precision_score(y_true, y_pred, average='binary', zero_division=0), 4),
-        "recall": round(recall_score(y_true, y_pred, average='binary', zero_division=0), 4),
-        "f1": round(f1_score(y_true, y_pred, average='binary', zero_division=0), 4),
+        "precision": round(precision_score(y_true, y_pred, average='macro', zero_division=0), 4),
+        "recall": round(recall_score(y_true, y_pred, average='macro', zero_division=0), 4),
+        "f1": round(f1_score(y_true, y_pred, average='macro', zero_division=0), 4),
         "evaluated_count": len(results),
         "invalid_predictions": invalid_predictions,
         "invalid_ratio": round(invalid_predictions / len(results) if results else 0, 4),
@@ -205,26 +194,22 @@ def evaluate_final_results(results: List[Dict], scheme):
     return metrics_dict
 
 def batched_sglang_generation(input_ids, sampling_params, engine, BATCH_SIZE=100):
-
+    """Generates text in batches using the SGLang engine."""
     batched_input_ids = [
         input_ids[i:i + BATCH_SIZE] 
         for i in range(0, len(input_ids), BATCH_SIZE)
     ]
     results = []
     for input_ids_batch in tqdm.tqdm(batched_input_ids, desc="Batched Generating"):
-        # 每次只处理一个批次的输入ID
         results_batch = engine.generate(
             input_ids=input_ids_batch,
             sampling_params=sampling_params
         )
-        
-        # 将当前批次的结果添加到总结果列表中
         results.extend(results_batch)
-    
     return results
 
 def process_search_stage(search_jobs, engine, tokenizer, parser, turn):
-    """处理需要生成搜索查询的作业 (iterative, one query per turn)."""
+    """Processes jobs that require generating search queries (iterative, one query per turn)."""
     if not search_jobs:
         return
 
@@ -241,12 +226,12 @@ def process_search_stage(search_jobs, engine, tokenizer, parser, turn):
     ]
     
     sampling_params = {"max_new_tokens": 1024, "temperature": 0}
-    # search_responses = engine.generate(input_ids=search_input_ids, sampling_params=sampling_params)
     search_responses = batched_sglang_generation(
-                            input_ids=search_input_ids,
-                            sampling_params=sampling_params,
-                            engine=engine,
-                        )
+        input_ids=search_input_ids,
+        sampling_params=sampling_params,
+        engine=engine,
+    )
+    
     search_queries = []
     for job, response in zip(search_jobs, search_responses):
         job["search_query"] = None
@@ -288,19 +273,16 @@ def process_search_stage(search_jobs, engine, tokenizer, parser, turn):
 
     for api_result, id in zip(api_results, valid_search_job_ids):  
         search_jobs[id]["search_count"] += 1
-        # API call for a single query
-        # Append the tool result to the message history for the next turn
         search_jobs[id]["messages"].append({"role": "tool", "content": api_result})
-        # Keep the job in the search stage for the next iteration
         search_jobs[id]["current_step"] = "search"
         search_jobs[id]["search_results"].append({"query": search_jobs[id]["search_query"], "result": api_result})
         del search_jobs[id]["search_query"]
 
 def process_evaluation_stage(evaluate_jobs, engine, tokenizer, args):
-    """Summarize search results for jobs that performed searches."""
+    """Summarizes search results for jobs that performed searches."""
 
     def parse_info_tags(text: str) -> List[str]:
-        """使用正则表达式从文本中提取所有被 <Info>...</Info> 标签包裹的内容。"""
+        """Extracts content from <Info>...</Info> tags using regex."""
         pattern = r"<Info>(.*?)</Info>"
         facts = re.findall(pattern, text, re.DOTALL)
         facts = [fact.strip() for fact in facts if fact.strip() != "No useful information retrieved."]
@@ -321,9 +303,18 @@ def process_evaluation_stage(evaluate_jobs, engine, tokenizer, args):
         
     print(f"--- Generating summaries for {len(jobs_to_summarize)} jobs ---")
 
-    summarization_prompt = """Based on the preceding conversation, please provide a concise summary of the key facts you have gathered to help verify the factuality of the answer.
+    best_of_n_summarization_prompt = """Based on the preceding conversation, please provide a concise summary of the key facts you have gathered to help verify the factuality of the answer.
 Please direct output the key facts with the format of '<Info> fact 1 </Info> <Info> fact 2 </Info> <Info> fact 3 </Info>', without any openings, closings or additional explanations.
 If there is no useful information, you can direct output '<Info> No useful information retrieved. </Info>'""" 
+
+    pointwise_summarization_prompt = """Based on the preceding conversation, please provide a concise summary of the key facts you have gathered to help answer the question.
+Please direct output the key facts with the format of '<Info> fact 1 </Info> <Info> fact 2 </Info> <Info> fact 3 </Info>', without any openings, closings or additional explanations.
+If there is no useful information, you can direct output '<Info> No useful information retrieved. </Info>'""" 
+
+    if args.scheme == "best_of_n":
+        summarization_prompt = best_of_n_summarization_prompt
+    else:
+        summarization_prompt = pointwise_summarization_prompt
     
     summary_input_ids = []
     for job in jobs_to_summarize:
@@ -333,91 +324,87 @@ If there is no useful information, you can direct output '<Info> No useful infor
         ))
 
     sampling_params = {"max_new_tokens": 1024, "temperature": 0}
-    # summary_responses = engine.generate(input_ids=summary_input_ids, sampling_params=sampling_params)
     summary_responses = batched_sglang_generation(
-                            input_ids=summary_input_ids,
-                            sampling_params=sampling_params,
-                            engine=engine,
-                        )
+        input_ids=summary_input_ids,
+        sampling_params=sampling_params,
+        engine=engine,
+    )
 
     for job, response in zip(jobs_to_summarize, summary_responses):
         generated_summary = response["text"]
-
         extracted_facts = parse_info_tags(generated_summary)
-        job["extracted_facts"] = extracted_facts  # 将提取出的事实列表存入 job 字典
-
+        job["extracted_facts"] = extracted_facts
         job["current_step"] = "verdict"
 
 def process_verdict_stage(verdict_jobs, engine, tokenizer, args):
-    """处理准备好进行最终裁决的作业。"""
+    """Processes jobs that are ready for a final verdict."""
     if not verdict_jobs:
         return
     
-    if args.scheme == "pairwise":
-        verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is more factually correct.
+    # Prompt for local_retrieval mode
+    retrieval_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
 
 Question: {question}
-Answer1: {answer1}
-Answer2: {answer2}
+{answers_block}
 Retrieved Reference Information: {search_summary}
 
-Based on the question, both answers, and the reference information retrieved before, determine which answer is more factually correct.
-Please first explantion, and then provide your final verdict with the format: 'Therefore, the answer with better factuality correctness is: <verdict> Answer1/Answer2 </verdict>'. For example, 'Therefore, the answer with better factuality correctness is: <verdict> Answer1 </verdict>"""
-    else:
-        verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine whether the answer is factually correct or not.
+Based on the question, all the provided answers, and the reference information, determine which answer is the most factually correct answer to the question.
+Please provide your explanation first, and then state your final verdict in the format: 'Therefore, the best answer is: <verdict>AnswerX</verdict>', where X is the number of the best answer. For example, 'Therefore, the best answer is: <verdict>Answer3</verdict>'"""
+
+    # Prompt for direct_gen mode
+    direct_gen_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
 
 Question: {question}
-Answer: {answer}
-Retrieved Reference Information: {search_summary}
+{answers_block}
 
-Based on the question, answer, and the reference information retrieved before, determine if the answer is factually correct or not.
-Please first explantion, and then provide your final verdict with the format: 'Therefore, the final verdict: <verdict> Real/Not Real </verdict>'. For example, 'Therefore, the final verdict: <verdict> Real </verdict>"""
+Based on the question and the provided answers, determine which answer is the most factually correct answer to the question.
+Please provide your explanation first, and then state your final verdict in the format: 'Therefore, the best answer is: <verdict>AnswerX</verdict>'. For example, 'Therefore, the best answer is: <verdict>Answer3</verdict>'"""
 
     print(f"--- Processing {len(verdict_jobs)} verdict jobs ---")
     verdict_input_ids = []
     for job in verdict_jobs:
+        # Dynamically create the block of answers
+        answers = job["original_item"]["answers"]
+        answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(answers)])
 
-        facts = job.get("extracted_facts", [])
-        if facts == []:
-            formatted_facts = "No useful information retrieved."
-        else:
-            formatted_facts = " ".join([f"{i}. {fact}" for i,fact in enumerate(facts)])
-
-        if args.scheme == "pointwise":
-            prompt = verdict_prompt.format(
+        if args.mode == "local_retrieval":
+            facts = job.get("extracted_facts", [])
+            if not facts:
+                formatted_facts = "No useful information retrieved."
+            else:
+                formatted_facts = " ".join([f"{i+1}. {fact}" for i, fact in enumerate(facts)])
+            
+            prompt = retrieval_verdict_prompt.format(
                 question=job["original_item"]["question"],
-                answer=job["original_item"]["answer"]["answer"],
+                answers_block=answers_block,
                 search_summary=formatted_facts
             )
-        else:
-            prompt = verdict_prompt.format(
+        else:  # direct_gen mode
+            prompt = direct_gen_verdict_prompt.format(
                 question=job["original_item"]["question"],
-                answer1=job["original_item"]["answer1"]["answer"],
-                answer2=job["original_item"]["answer2"]["answer"],
-                search_summary=formatted_facts
+                answers_block=answers_block
             )
-        # Start a clean message history for the final verdict
+        
         verdict_messages = [{"role": "user", "content": prompt}]
         verdict_input_ids.append(tokenizer.apply_chat_template(
             conversation=verdict_messages, tokenize=True, add_generation_prompt=True
         ))
 
     sampling_params = {"max_new_tokens": 1024, "temperature": 0}
-    # verdict_responses = engine.generate(input_ids=verdict_input_ids, sampling_params=sampling_params)
     verdict_responses = batched_sglang_generation(
-                            input_ids=verdict_input_ids,
-                            sampling_params=sampling_params,
-                            engine=engine,
-                        )
+        input_ids=verdict_input_ids,
+        sampling_params=sampling_params,
+        engine=engine,
+    )
     
     for job, response in zip(verdict_jobs, verdict_responses):
         job["verdict_response"] = response["text"]
 
-# --- 主函数 ---
+# --- Main Function ---
 def main():
-    """主执行函数，使用SGLang重构。"""
+    """Main execution function, refactored for SGLang."""
     args = parse_args()
-    MAX_TURNS = 5 # A more reasonable max for iterative search
+    MAX_TURNS = 5 
 
     print(f"Arguments: {args}")
 
@@ -435,86 +422,122 @@ def main():
     with open(args.input_file, "r", encoding="utf-8") as f:
         input_data = [json.loads(line) for line in f if line.strip()]
 
-    # --- Prompt模板 ---
-    if args.scheme == "pointwise":
-        search_prompt = f"""You are an expert fact-checking assistant. Your goal is to determine whether the following answer is real or not.
+    # --- Prompt Templates ---
+    best_of_n_search_prompt = f"""You are an expert fact-checking assistant. Your task is to determine which of the provided answers is the most factually correct.
 
-Based on the question and answer below, and any existing search results, identify what additional knowledge you need to verify the factual accuracy. Generate search queries for the missing information.
+Based on the question and the answers below, and any existing search results, identify what additional knowledge you need to compare their factual accuracy, and generate search queries for the missing information.
 
 Question: {{question}}
-Answer: {{answer}}
+{{answers_block}}
 
 Please analyze what information is still needed and generate search queries one by one using <tool_call> query </tool_call>. The search results will be returned between <tool_response> and </tool_response>.
 
-If you believe you have enough information to make a judgment and don't need search any more, respond with "READY_FOR_EVALUATION" instead of making tool calls."""
-    elif args.scheme == "pairwise":
-        search_prompt = f"""You are an expert fact-checking assistant. Your task is to determine which of the two provided answers is more factually correct.
+If you believe you have enough information to make a judgment and don't need to search any more, respond with "READY_FOR_EVALUATION" instead of making tool calls."""
 
-Based on the question and answers below, and any existing search results, identify what additional knowledge you need to compare their factual accuracy, and generate search queries for the missing information.
+    pointwise_search_prompt = f"""Your task is to gather information and answer the following question. First identify what knowledge you need to answer the question, and generate search queries for the missing information.
 
 Question: {{question}}
-Answer1: {{answer1}}
-Answer2: {{answer2}}
 
-Please analyze what information is still needed and generate search queries one by one using <tool_call> query </tool_call>. The search results will be returned between <tool_response> and </tool_response>.
+Please analyze what information is needed and generate search queries one by one using <tool_call> query </tool_call>. The search results will be returned between <tool_response> and </tool_response>.
 
-If you believe you have enough information to make a judgment and don't need search any more, respond with "READY_FOR_EVALUATION" instead of making tool calls."""
+If you believe you have enough information to answer the question and don't need to search any more, respond with "READY_FOR_ANSWERING" instead of making tool calls."""
 
-    # --- 初始化工作队列 ---
+    # --- Initialize Job Queue ---
     jobs = []
     for i, item in enumerate(input_data):
-        job_base = {"id": i, "original_item": item, "search_count": 0}
-        if args.mode == "local_retrieval":
-            if args.scheme == "pointwise":
-                content = search_prompt.format(
+        if args.scheme == "pointwise":
+            # MODIFIED: Create one search job per question, not per answer.
+            content = pointwise_search_prompt.format(
+                question=item["question"]
+            )
+            jobs.append({
+                "id": i,
+                "original_item": item,
+                "search_count": 0,
+                "messages": [{"role": "user", "content": content}],
+                "current_step": "search",
+                "search_results": []
+            })
+        else: # best_of_n
+            job_base = {"id": i, "original_item": item, "search_count": 0}
+            if args.mode == "local_retrieval":
+                answers = item.get("answers", [])
+                answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(answers)])
+                content = best_of_n_search_prompt.format(
                     question=item["question"], 
-                    answer=item["answer"]['answer'],
+                    answers_block=answers_block,
                 )
-            else:
-                content = search_prompt.format(
-                    question=item["question"], 
-                    answer1=item["answer1"]['answer'],
-                    answer2=item["answer2"]['answer'],
-                )
-            jobs.append({**job_base, "messages": [{"role": "user", "content": content}], "current_step": "search", "search_results": []})
+                jobs.append({**job_base, "messages": [{"role": "user", "content": content}], "current_step": "search", "search_results": []})
+            elif args.mode == "direct_gen":
+                jobs.append({**job_base, "current_step": "verdict", "extracted_facts": []})
 
-    # Stage 1: Iterative Search
-    print(f"--- Starting Iterative Search Stage ---")
-    for turn in tqdm.tqdm(range(MAX_TURNS), desc="Searching"):
-        search_jobs = [job for job in jobs if job["current_step"] == "search"]
-        if not search_jobs:
-            print("No more active jobs in search stage. Exiting search loop.")
-            break
-        process_search_stage(search_jobs, engine, tokenizer, parser, turn)
-    print("--- Search Stage Finished ---")
+    # --- Conditional Execution based on Mode ---
+    if args.mode == "local_retrieval":
+        # Stage 1: Iterative Search
+        print(f"--- Starting Iterative Search Stage ---")
+        for turn in tqdm.tqdm(range(MAX_TURNS), desc="Searching"):
+            search_jobs = [job for job in jobs if job["current_step"] == "search"]
+            if not search_jobs:
+                print("No more active jobs in search stage. Exiting search loop.")
+                break
+            process_search_stage(search_jobs, engine, tokenizer, parser, turn)
+        print("--- Search Stage Finished ---")
 
-    # Stage 2: Evaluation (Summarization)
-    print("--- Starting Evaluation Stage ---")
-    for job in jobs:
-        job["current_step"] = "evaluate"
-    process_evaluation_stage(jobs, engine, tokenizer, args)
-    print("--- Evaluation Stage Finished ---")
+        # Stage 2: Evaluation (Summarization)
+        print("--- Starting Evaluation Stage ---")
+        for job in jobs:
+            job["current_step"] = "evaluate"
+        evaluation_jobs = [job for job in jobs if job["current_step"] == "evaluate"]
+        process_evaluation_stage(evaluation_jobs, engine, tokenizer, args)
+        print("--- Evaluation Stage Finished ---")
     
-    # Stage 3: Verdict
+    # --- Pointwise scheme skips verdict and final evaluation ---
+    if args.scheme == "pointwise":
+        print("Pointwise scheme selected. Skipping verdict and final evaluation.")
+        with open(args.output_file, "w", encoding="utf-8") as f_out:
+            # MODIFIED: Process results for one-job-per-question logic.
+            for job in sorted(jobs, key=lambda x: x["id"]):
+                # Start with the original item from the job
+                result_item = job["original_item"]
+                
+                # Get the single set of extracted facts
+                extracted_facts = job.get("extracted_facts", [])
+                
+                # Create a new list of answers, adding the same facts to each one
+                updated_answers = []
+                for ans in result_item.get("answers", []):
+                    # Copy original answer and add the extracted_facts key
+                    updated_answers.append({**ans, "extracted_facts": extracted_facts})
+                
+                # Replace the original answers list with the updated one
+                result_item["answers"] = updated_answers
+                
+                # Write the final combined result to the output file
+                f_out.write(json.dumps(result_item, ensure_ascii=False) + "\n")
+        
+        print(f"Results saved to {args.output_file}")
+        return # End execution for pointwise
+
+    # --- Best-of-N final stages ---
+    # Stage 3: Verdict (runs for best_of_n mode)
     print("--- Starting Verdict Stage ---")
-    for job in jobs:
-        assert job["current_step"] == "verdict"
-    process_verdict_stage(jobs, engine, tokenizer, args)
+    verdict_jobs = [job for job in jobs if job["current_step"] == "verdict"]
+    process_verdict_stage(verdict_jobs, engine, tokenizer, args)
     print("--- Verdict Stage Finished ---")
     
-    # --- 结果处理与保存 ---
+    # --- Result Processing and Saving ---
     print("All sequences processed. Saving results...")
     final_results = []
     with open(args.output_file, "w", encoding="utf-8") as f_out:
         for job in sorted(jobs, key=lambda x: x["id"]):
-            final_verdict = extract_final_verdict(job["verdict_response"], scheme=args.scheme)
+            final_verdict = extract_final_verdict(job.get("verdict_response", ""))
             result_item = {
                 **job["original_item"],
-                "search_messages": job["messages"],
-                "extracted_facts": job["extracted_facts"],
-                "verdict_response": job["verdict_response"],
+                "search_messages": job.get("messages", []),
+                "extracted_facts": job.get("extracted_facts", []),
+                "verdict_response": job.get("verdict_response", ""),
                 "final_verdict": final_verdict,
-                "search_count": job["search_count"],
+                "search_count": job.get("search_count", 0),
             }
             final_results.append(result_item)
             f_out.write(json.dumps(result_item, ensure_ascii=False) + "\n")
@@ -526,7 +549,7 @@ If you believe you have enough information to make a judgment and don't need sea
     print(f"\nDataset: {input_file_name}\nModel: {model_name}\nMode: {args.mode}")
     
     print("Starting evaluation...")
-    metrics = evaluate_final_results(final_results, scheme=args.scheme)
+    metrics = evaluate_final_results(final_results)
     if metrics:
         print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
 

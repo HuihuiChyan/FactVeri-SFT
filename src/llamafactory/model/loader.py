@@ -165,11 +165,7 @@ def load_model(
             elif type(config) in AutoModelForTextToWaveform._model_mapping.keys():  # audio hack for qwen2_5_omni
                 load_class = AutoModelForTextToWaveform
             else:
-                import sys
-                sys.path.append("/workspace/FactVeri-SFT/src/llamafactory/model")
-                from modeling_gencls import Qwen2ForGenCLS
-                load_class = Qwen2ForGenCLS
-                # load_class = AutoModelForCausalLM
+                load_class = AutoModelForCausalLM
 
             if model_args.train_from_scratch:
                 model = load_class.from_config(config, trust_remote_code=model_args.trust_remote_code)

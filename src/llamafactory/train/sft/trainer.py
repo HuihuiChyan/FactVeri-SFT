@@ -57,7 +57,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             kwargs["processing_class"] = kwargs.pop("tokenizer")
         else:
             self.processing_class: PreTrainedTokenizer = kwargs.get("tokenizer")
-        
+
         super().__init__(**kwargs)
         if processor is not None:
             # avoid wrong loss under gradient accumulation
@@ -77,6 +77,11 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
             self.accelerator.clip_grad_norm_ = MethodType(clip_grad_norm_old_version, self.accelerator)
             self.add_callback(BAdamCallback)
+
+        if finetuning_args.use_dft_loss:
+            from ..trainer_utils import dft_loss_func
+
+            self.compute_loss_func = dft_loss_func
 
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
