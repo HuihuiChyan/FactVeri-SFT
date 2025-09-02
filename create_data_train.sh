@@ -31,7 +31,7 @@ MODELS=(
 #         --phase "generation"
 # done
 
-MODEL="/workspace/HFModels/Qwen3-14B"
+MODEL="/workspace/HFModels/Qwen3-8B"
 python inference/generate_answer.py \
     --model-type vllm \
     --model-path $MODEL \
