@@ -255,7 +255,7 @@ def evaluate_line(line, args):
         response = request_gpt(messages, model=args.model_path, temperature=args.temperature)
 
         if response == "":
-            verification = "irrelevant"
+            verfication = "irrelevant"
         else:
             verfication = response.split()[-1].strip().lower().rstrip(".")
             if "incorrect" in response.split()[-1].strip().lower():
@@ -320,7 +320,7 @@ def evaluate_answers_vllm(lines, args):
         temperature=args.temperature,
         max_tokens=args.max_tokens,
     )
-    prompts = [tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True) for prompt in inputs]
+    prompts = [tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True, enable_thinking=False) for prompt in inputs]
 
     outputs = llm.generate(prompts, sampling_params)
     responses = [output.outputs[0].text.strip() for output in outputs]
@@ -513,7 +513,14 @@ if __name__ == "__main__":
         pool = multiprocessing.Pool(processes=args.pool_number, initializer=init_worker, initargs=(counter, start_time))
 
     with open(args.input_file, "r", encoding="utf-8") as fin:
-        lines = [json.loads(line.strip()) for line in fin.readlines()]
+        lines = []
+        for line in fin.readlines():
+            try:
+                line = json.loads(line.strip())
+            except:
+                print("An abnormal line in jsonl file!")
+                continue
+            lines.append(line)
 
     if args.phase == "filtering":
         lines = instruction_filtering(lines, args)

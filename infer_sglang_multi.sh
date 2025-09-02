@@ -78,8 +78,3 @@ merged_output_file="${output_prefix}.jsonl"
 # echo "Parallel inference complete!"
 # echo "Final merged output is located at: $merged_output_file"
 # echo "---"
-
-#Optional: Run the conversion script on the final merged file
-python -u inference/process_train.py \
-    --input-file "$merged_output_file" \
-    --output-file "${output_prefix}-train.json"

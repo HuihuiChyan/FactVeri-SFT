@@ -123,8 +123,15 @@ log/
 
 document/
 
-results/
+corpora/hotpotqa/hotpotqa_train/
 
-corpora/
+nq_hotpot_train_head/
+nq_hotpotqa_train/
+
+*evaluation.jsonl
+*filtering.jsonl
+*filtering_full.jsonl
+*generation.jsonl
+*question.jsonl
 
 trash-bin/

@@ -4,8 +4,8 @@ model_path=/workspace/HFModels/
 model_name=Qwen2.5-7B-Instruct
 mode=local_retrieval # choose between local_retrieval and direct_gen
 scheme=best_of_n
-dataset_path=/workspace/FactVeri-SFT/corpora/popqa
-dataset_name_without_ext=popqa_selection
+dataset_path=/workspace/FactVeri-SFT/corpora/musique
+dataset_name_without_ext=musique_selection
 python -u inference/infer_batch_sglang.py \
     --model_path $model_path/$model_name \
     --input_file $dataset_path/$dataset_name_without_ext.jsonl \

@@ -11,18 +11,13 @@ from sklearn.metrics import (
     balanced_accuracy_score,
 )
 from typing import List, Dict
-from utils_prompts import CLS_VERDICT_PROMPT
+from process_cls_input import create_prompt_for_cls
 
 def evaluate_final_results(results: List[Dict]):
     """
     Calculates and prints evaluation metrics for a multi-class (best-of-N) scenario.
     """
     y_true, y_pred = [], []
-    invalid_predictions = 0
-    num_classes = 0
-    if results:
-        # Determine the number of classes from the first item's answers list
-        num_classes = len(results[0].get("answers", []))
 
     for item in results:
         # The ground truth label from the dataset
@@ -71,13 +66,22 @@ def main():
         "--input_file",
         type=str,
         required=True,
-        help="Path to the input JSONL file (output from the previous script in 'pointwise' mode).",
     )
     parser.add_argument(
         "--output_file",
         type=str,
         required=True,
-        help="Path to save the output JSONL file with predictions.",
+    )
+    parser.add_argument(
+        "--max_length",
+        type=int,
+        default=4096,
+    )
+    parser.add_argument(
+        "--cls-input",
+        type=str,
+        choices=("facts", "naive", "facts_trace"),
+        default="naive"
     )
     args = parser.parse_args()
 
@@ -93,36 +97,16 @@ def main():
     final_results = []
     with torch.no_grad():
         for item in tqdm.tqdm(lines, desc="Classifying Answers"):
-            question = item["question"]
             answers = item["answers"]
             answer_scores = []
 
             for i, answer_item in enumerate(answers):
-                answer_text = answer_item["answer"]
-                facts = answer_item.get("extracted_facts", [])
-
-                if i == 0:
-                    if not facts:
-                        formatted_facts = "No useful information retrieved."
-                    else:
-                        formatted_facts = " ".join([f"{i+1}. {fact}" for i, fact in enumerate(facts)])
-
-                # Create the input text for the classifier using the specified prompt format
-                verdict_prompt = CLS_VERDICT_PROMPT
-                
-                prompt_content = verdict_prompt.format(
-                    question=question, 
-                    answer=answer_text, 
-                    formatted_facts=formatted_facts
-                )
                 
                 # Apply the chat template to format the input as a conversation
-                input_text = tokenizer.apply_chat_template(
-                    [{"role": "user", "content": prompt_content}], 
-                    tokenize=False, 
-                )
+                prompt = create_prompt_for_cls(item, answer_item, args.cls_input)
+                prompt = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
                 
-                inputs = tokenizer(input_text, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
+                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
                 
                 # Get the raw logit score from the classifier
                 score = model(**inputs).logits.item()

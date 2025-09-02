@@ -15,38 +15,39 @@ MODELS=(
     "Qwen2.5-3B-Instruct"
     "Qwen2.5-14B-Instruct"
 )
-if [ ! -f ./corpora/$DATA/$DATA\_generation.jsonl ]; then
-    echo "./corpora/$DATA/$DATA\_generation.jsonl does not exist. Constructing it."
-    cp ./corpora/$DATA/$DATA\_question.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
-fi
 
-for MODEL in "${MODELS[@]}"
-do
-    python inference/generate_answer.py \
-        --model-type vllm \
-        --model-path /workspace/HFModels/$MODEL \
-        --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --phase "generation"
-done
+# if [ ! -f ./corpora/$DATA/$DATA\_generation.jsonl ]; then
+#     echo "./corpora/$DATA/$DATA\_generation.jsonl does not exist. Constructing it."
+#     cp ./corpora/$DATA/$DATA\_question.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
+# fi
 
-# MODEL="/workspace/HFModels/Qwen2.5-14B-Instruct"
-# python inference/generate_answer.py \
-#     --model-type vllm \
-#     --model-path $MODEL \
-#     --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-#     --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-#     --phase "evaluation" \
-#     --negative-num 1 \
-#     --multi-process "True"
+# for MODEL in "${MODELS[@]}"
+# do
+#     python inference/generate_answer.py \
+#         --model-type vllm \
+#         --model-path /workspace/HFModels/$MODEL \
+#         --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --phase "generation"
+# done
 
+MODEL="/workspace/HFModels/Qwen3-14B"
 python inference/generate_answer.py \
     --model-type vllm \
-    --model-path /workspace/HFModels/$MODEL \
-    --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-    --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
-    --phase "selection" \
-    --negative-num 1
+    --model-path $MODEL \
+    --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+    --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+    --phase "evaluation" \
+    --negative-num 1 \
+    --multi-process "True"
+
+# python inference/generate_answer.py \
+#     --model-type vllm \
+#     --model-path /workspace/HFModels/$MODEL \
+#     --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+#     --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
+#     --phase "selection" \
+#     --negative-num 1
 
 # MODEL="Qwen2.5-14B-Instruct"
 # python inference/generate_answer.py \

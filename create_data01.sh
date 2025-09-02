@@ -24,20 +24,20 @@ MODELS=(
 #     --output-file ./corpora/$DATA/$DATA\_filtering.jsonl \
 #     --phase "filtering"
 
-if [ ! -f ./corpora/$DATA/$DATA\_generation.jsonl ]; then
-    echo "./corpora/$DATA/$DATA\_generation.jsonl does not exist. Constructing it."
-    cp ./corpora/$DATA/$DATA\_filtering.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
-fi
+# if [ ! -f ./corpora/$DATA/$DATA\_generation.jsonl ]; then
+#     echo "./corpora/$DATA/$DATA\_generation.jsonl does not exist. Constructing it."
+#     cp ./corpora/$DATA/$DATA\_filtering.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
+# fi
 
-for MODEL in "${MODELS[@]}"
-do
-    python inference/generate_answer.py \
-        --model-type vllm \
-        --model-path /workspace/HFModels/$MODEL \
-        --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
-        --phase "generation"
-done
+# for MODEL in "${MODELS[@]}"
+# do
+#     python inference/generate_answer.py \
+#         --model-type vllm \
+#         --model-path /workspace/HFModels/$MODEL \
+#         --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --output-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#         --phase "generation"
+# done
 
 MODEL="gpt-4o"
 python inference/generate_answer.py \
