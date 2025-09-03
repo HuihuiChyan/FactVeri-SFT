@@ -1,8 +1,8 @@
-GPU_INDICES="4,5,6"
+GPU_INDICES="4,5,6,7"
 
 # Model and dataset parameters
 model_path="/workspace/HFModels/"
-model_name="Qwen2.5-7B-Instruct"
+model_name="Qwen3-4B"
 mode="local_retrieval" # Choose between "local_retrieval" and "direct_gen"
 scheme="pointwise"     # Choose between "pointwise" and "best_of_n"
 dataset_path="/workspace/FactVeri-SFT/corpora/nq_hotpot_train_head"
@@ -11,7 +11,7 @@ dataset_name_without_ext="nq_hotpot_train_head_selection"
 # Construct full paths and prefixes
 input_file="${dataset_path}/${dataset_name_without_ext}.jsonl"
 output_prefix="./results/${dataset_name_without_ext}-${model_name}-${scheme}-${mode}"
-merged_output_file="${output_prefix}.jsonl"
+merged_output_file="${output_prefix}.json"
 
 # Create necessary directories
 temp_dir="./temp_data"
@@ -52,7 +52,8 @@ for i in "${!gpu_array[@]}"; do
         --input_file "$shard_file" \
         --output_file "$output_file" \
         --mode "$mode" \
-        --scheme "$scheme" &
+        --scheme "$scheme" \
+        --disable_thinking &
     
     pids+=($!) # Store the PID of the background process
 done

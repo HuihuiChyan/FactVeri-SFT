@@ -12,30 +12,32 @@ from sklearn.metrics import (
 )
 from typing import List, Dict
 from process_cls_input import create_prompt_for_cls
+# 导入peft库以支持LoRA
+from peft import PeftModel
 
 def evaluate_final_results(results: List[Dict]):
     """
-    Calculates and prints evaluation metrics for a multi-class (best-of-N) scenario.
+    为多分类（best-of-N）场景计算并打印评估指标。
     """
     y_true, y_pred = [], []
 
     for item in results:
-        # The ground truth label from the dataset
+        # 数据集中的真实标签
         true_label = item.get("verify_result") 
-        # The prediction made by our classifier
+        # 分类器做出的预测
         pred_label = item.get("prediction")
 
         if true_label is None:
-            continue  # Skip items without a ground truth label
+            continue  # 跳过没有真实标签的项
 
         y_true.append(true_label)
         y_pred.append(pred_label)
 
     if not y_true:
-        print("Evaluation failed. No valid ground truth labels found.")
+        print("评估失败。未找到有效的真实标签。")
         return None
 
-    # Use 'macro' average for multi-class precision, recall, and F1
+    # 对多分类的 precision, recall, 和 F1 使用 'macro' 平均
     metrics_dict = {
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
         "balanced_accuracy": round(balanced_accuracy_score(y_true, y_pred), 4),
@@ -45,23 +47,36 @@ def evaluate_final_results(results: List[Dict]):
         "evaluated_count": len(results),
     }
 
-    print("\n--- Evaluation Results ---")
+    print("\n--- 评估结果 ---")
     for key, value in metrics_dict.items():
         print(f"{key.replace('_', ' ').title()}: {value}")
     print("--------------------------\n")
     return metrics_dict
 
 def main():
-    """Main function to run classification and evaluation."""
+    """主函数，运行分类和评估。"""
     parser = argparse.ArgumentParser(
-        description="Evaluate fact-checking results using a classifier on extracted facts."
+        description="使用分类器对提取的事实进行评估，以验证事实。"
     )
     parser.add_argument(
         "--model_path",
         type=str,
         required=True,
-        help="Path to the sequence classification model.",
+        help="序列分类模型或基础模型的路径。",
     )
+    # --- 新增LoRA相关参数 ---
+    parser.add_argument(
+        "--lora_path",
+        type=str,
+        default=None,
+        help="LoRA适配器的路径 (仅在 --use_lora 启用时使用)。",
+    )
+    parser.add_argument(
+        "--use_lora",
+        action="store_true", # 当命令行包含 --use_lora 时，此参数为 True
+        help="启用LoRA进行推理。",
+    )
+    # ----------------------
     parser.add_argument(
         "--input_file",
         type=str,
@@ -80,54 +95,70 @@ def main():
     parser.add_argument(
         "--cls-input",
         type=str,
-        choices=("facts", "naive", "facts_trace"),
+        choices=("facts", "naive", "trace"),
         default="naive"
     )
     args = parser.parse_args()
 
-    print("Loading classifier model and tokenizer...")
+    print("加载分类器模型和分词器...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_path).cuda()
-    model.eval() # Set model to evaluation mode
 
-    print(f"Loading data from {args.input_file}...")
+    # --- 修改模型加载逻辑以支持LoRA ---
+    if args.use_lora:
+        if not args.lora_path:
+            raise ValueError("使用 --use_lora 时必须指定 --lora_path。")
+        print(f"从 {args.model_path} 加载基础模型...")
+        base_model = AutoModelForSequenceClassification.from_pretrained(args.model_path, num_labels=1)
+        print(f"从 {args.lora_path} 加载LoRA适配器...")
+        model = PeftModel.from_pretrained(base_model, args.lora_path)
+        print("合并LoRA权重...")
+        model = model.merge_and_unload() # 合并权重以加速推理
+        model.cuda()
+        print("LoRA模型加载并合并完成。")
+    else:
+        print(f"从 {args.model_path} 加载完整模型...")
+        model = AutoModelForSequenceClassification.from_pretrained(args.model_path).cuda()
+        print("完整模型加载完成。")
+    # ------------------------------------
+    
+    model.eval() # 设置模型为评估模式
+
+    print(f"从 {args.input_file} 加载数据...")
     with open(args.input_file, "r", encoding="utf-8") as fin:
         lines = [json.loads(line) for line in fin.readlines()]
 
     final_results = []
     with torch.no_grad():
-        for item in tqdm.tqdm(lines, desc="Classifying Answers"):
+        for item in tqdm.tqdm(lines, desc="分类答案"):
             answers = item["answers"]
             answer_scores = []
 
             for i, answer_item in enumerate(answers):
                 
-                # Apply the chat template to format the input as a conversation
-                prompt = create_prompt_for_cls(item, answer_item, args.cls_input)
-                prompt = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
+                # 应用聊天模板将输入格式化为对话
+                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
+                inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=args.max_length).to(model.device)
                 
-                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
-                
-                # Get the raw logit score from the classifier
+                # 从分类器获取原始的logit分数
                 score = model(**inputs).logits.item()
                 answer_scores.append(score)
-                # Optionally save the score for each answer
+                # 可选：为每个答案保存分数
                 answer_item["factuality_score"] = score
 
-            # The prediction is the index of the answer with the highest score
+            # 预测结果是得分最高的答案的索引
             prediction = answer_scores.index(max(answer_scores))
             item["prediction"] = prediction
             final_results.append(item)
 
-    print(f"Saving results with predictions to {args.output_file}...")
+    print(f"将带有预测的结果保存到 {args.output_file}...")
     with open(args.output_file, "w", encoding="utf-8") as f_out:
         for result in final_results:
             f_out.write(json.dumps(result, ensure_ascii=False) + "\n")
 
-    print("Starting final evaluation...")
+    print("开始最终评估...")
     metrics = evaluate_final_results(final_results)
     if metrics:
-        print(f"Final evaluation metrics: {json.dumps(metrics, indent=4)}")
+        print(f"最终评估指标: {json.dumps(metrics, indent=4)}")
 
 if __name__ == "__main__":
     main()
