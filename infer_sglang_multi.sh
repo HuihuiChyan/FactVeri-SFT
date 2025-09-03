@@ -1,4 +1,4 @@
-GPU_INDICES="4,5,6"
+GPU_INDICES="3,4,5,6"
 
 # Model and dataset parameters
 model_path="/workspace/HFModels/"
@@ -11,7 +11,7 @@ dataset_name_without_ext="nq_hotpot_train_head_selection"
 # Construct full paths and prefixes
 input_file="${dataset_path}/${dataset_name_without_ext}.jsonl"
 output_prefix="./results/${dataset_name_without_ext}-${model_name}-${scheme}-${mode}"
-merged_output_file="${output_prefix}.jsonl"
+merged_output_file="${output_prefix}.json"
 
 # Create necessary directories
 temp_dir="./temp_data"

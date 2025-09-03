@@ -135,3 +135,5 @@ nq_hotpotqa_train/
 *question.jsonl
 
 trash-bin/
+
+results/

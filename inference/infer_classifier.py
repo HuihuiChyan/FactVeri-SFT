@@ -80,7 +80,7 @@ def main():
     parser.add_argument(
         "--cls-input",
         type=str,
-        choices=("facts", "naive", "facts_trace"),
+        choices=("facts", "naive", "trace"),
         default="naive"
     )
     args = parser.parse_args()
@@ -103,10 +103,8 @@ def main():
             for i, answer_item in enumerate(answers):
                 
                 # Apply the chat template to format the input as a conversation
-                prompt = create_prompt_for_cls(item, answer_item, args.cls_input)
-                prompt = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
-                
-                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
+                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
+                inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
                 
                 # Get the raw logit score from the classifier
                 score = model(**inputs).logits.item()
