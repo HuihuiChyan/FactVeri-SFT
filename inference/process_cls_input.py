@@ -1,13 +1,17 @@
 import re
 <<<<<<< HEAD
+<<<<<<< HEAD
 import re
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 import json
 from argparse import ArgumentParser
 from transformers import AutoTokenizer
 from utils_prompts import CLS_VERDICT_PROMPT, CLS_VERDICT_PROMPT_NAIVE
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 # def remove_ending_verdict(prompt: str) -> str:
 #     """
@@ -37,6 +41,8 @@ from utils_prompts import CLS_VERDICT_PROMPT, CLS_VERDICT_PROMPT_NAIVE
     
 #     return cleaned_prompt
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 def remove_ending_verdict(prompt: str) -> str:
     """
     移除字符串末尾的 "Therefore, the best answer is: <verdict>...</verdict>" 模板。
@@ -64,7 +70,10 @@ def remove_ending_verdict(prompt: str) -> str:
     cleaned_prompt = re.sub(pattern, "", prompt)
     
     return cleaned_prompt
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 def create_prompt_for_cls(line, answer, cls_input, tokenizer):
     if cls_input == "facts":
@@ -81,20 +90,6 @@ def create_prompt_for_cls(line, answer, cls_input, tokenizer):
         prompt = verdict_prompt.format(question=line["question"], answer=answer["answer"], formatted_facts=formatted_facts)
         conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
 <<<<<<< HEAD
-        conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
-
-        return conversation
-        return conversation
-=======
-
-        return conversation
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-    
-    elif cls_input == "naive":
-
-        verdict_prompt = CLS_VERDICT_PROMPT_NAIVE
-        prompt = verdict_prompt.format(question=line["question"], answer=answer["answer"])
-        conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
 <<<<<<< HEAD
         conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
 
@@ -104,12 +99,37 @@ def create_prompt_for_cls(line, answer, cls_input, tokenizer):
 
         return conversation
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+
+        return conversation
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
+    
+    elif cls_input == "naive":
+
+        verdict_prompt = CLS_VERDICT_PROMPT_NAIVE
+        prompt = verdict_prompt.format(question=line["question"], answer=answer["answer"])
+        conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
+<<<<<<< HEAD
+<<<<<<< HEAD
+        conversation = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False)
+
+        return conversation
+        return conversation
+=======
+
+        return conversation
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+
+        return conversation
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
     elif cls_input == "trace":
 
         verdict_prompt = CLS_VERDICT_PROMPT
 
         extracted_facts = answer["extracted_facts"]
+<<<<<<< HEAD
 <<<<<<< HEAD
         assert len(extracted_facts) == 1
         if extracted_facts == []:
@@ -119,6 +139,8 @@ def create_prompt_for_cls(line, answer, cls_input, tokenizer):
         
         prompt = verdict_prompt.format(question=line["question"], answer=answer["answer"], formatted_facts=formatted_facts)
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         if extracted_facts == []:
             formatted_facts = "No useful information retrieved."
         else:
@@ -126,7 +148,10 @@ def create_prompt_for_cls(line, answer, cls_input, tokenizer):
         
         prompt = verdict_prompt.format(question=line["question"], answer=answer["answer"], formatted_facts=formatted_facts)
         verdict_content = remove_ending_verdict(answer["verdict_response"])
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         conversation = tokenizer.apply_chat_template([  
                                                         {
                                                             "role": "user", 
@@ -135,10 +160,14 @@ def create_prompt_for_cls(line, answer, cls_input, tokenizer):
                                                         {
                                                             "role": "assistant", 
 <<<<<<< HEAD
+<<<<<<< HEAD
                                                             "content": answer['reasoning_content'],
 =======
                                                             "content": verdict_content,
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+                                                            "content": verdict_content,
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                                                         },
                                                     ], tokenize=False)
 
@@ -169,7 +198,10 @@ if __name__ == "__main__":
                 prompt = create_prompt_for_cls(line, answer, args.cls_input, tokenizer)
 =======
                 prompt = create_prompt_for_cls(line, answer, args.cls_input)
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
                 all_prompts.append(prompt)
             

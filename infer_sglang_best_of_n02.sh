@@ -7,6 +7,7 @@ mode=local_retrieval # choose between local_retrieval and direct_gen
 scheme=best_of_n
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 dataset=qasc
 =======
 dataset=2wiki
@@ -14,6 +15,9 @@ dataset=2wiki
 =======
 dataset=2wiki
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+dataset=2wiki
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 dataset_path=/workspace/FactVeri-SFT/corpora/$dataset
 dataset_name_without_ext=$dataset\_selection
 python -u inference/infer_batch_sglang.py \

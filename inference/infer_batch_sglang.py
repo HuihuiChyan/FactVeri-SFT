@@ -187,6 +187,7 @@ def extract_final_verdict_best_of_n(model_generated_output: str) -> int:
     return -1 # Return -1 if no match is found
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def extract_final_verdict_pointwise(model_generated_output: str) -> str:
     """
     Extracts the final textual verdict from the model's output. It first looks for
@@ -218,6 +219,8 @@ def extract_final_verdict_pointwise(model_generated_output: str) -> str:
     # If no valid pattern is found in the output, return "Invalid"
     return "Invalid"
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 def extract_final_verdict_pointwise(model_generated_output: str):
     """
     从模型的输出中提取最终的文本结论。
@@ -251,7 +254,10 @@ def extract_final_verdict_pointwise(model_generated_output: str):
     # 如果在输出中没有找到 verdict 标签，则返回 Intermediate
     return "Intermediate"
 
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 def check_ready_for_evaluation(model_generated_output: str) -> bool:
     """
@@ -262,9 +268,12 @@ def check_ready_for_evaluation(model_generated_output: str) -> bool:
 
 def evaluate_final_results_best_of_n(results: List[Dict]):
 <<<<<<< HEAD
+<<<<<<< HEAD
 def evaluate_final_results_best_of_n(results: List[Dict]):
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
     """
     Calculates and prints evaluation metrics for a multi-class (best-of-N) scenario.
     """
@@ -320,9 +329,12 @@ def evaluate_final_results_pointwise(results: List[Dict]):
     tp, tn, fp, fn = 0, 0, 0, 0
     total_answers = 0
 <<<<<<< HEAD
+<<<<<<< HEAD
     invalid_predictions = 0
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
     for item in results:
         # 假设 `results` 列表中的每个 item 都包含一个名为 "answers" 的列表
@@ -336,11 +348,14 @@ def evaluate_final_results_pointwise(results: List[Dict]):
             ground_truth_str = answer.get("verify_result", "").lower()
             final_verdict_str = answer.get("final_verdict", "").lower()
 <<<<<<< HEAD
+<<<<<<< HEAD
 
             if final_verdict_str == "invalid":
                 invalid_predictions += 1
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
             
             # 定义正负例的判断标准
             # 基准真相 (Ground truth) 为正例，如果它是 "correct" 或 "intermediate"
@@ -363,20 +378,27 @@ def evaluate_final_results_pointwise(results: List[Dict]):
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 <<<<<<< HEAD
+<<<<<<< HEAD
     invalid_ratio = invalid_predictions / total_answers if total_answers > 0 else 0
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
     
     metrics = {
         "accuracy": accuracy,
         "precision": precision,
         "recall": recall,
 <<<<<<< HEAD
+<<<<<<< HEAD
         "f1": f1,
         "invalid_ratio": invalid_ratio,
 =======
         "f1_score": f1,
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+        "f1_score": f1,
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
     }
     
     print("\n--- Pointwise Evaluation Metrics ---")
@@ -536,7 +558,10 @@ def process_verdict_stage(verdict_jobs, engine, tokenizer, args):
     if args.scheme == "best_of_n":
         # Prompt for local_retrieval mode
         retrieval_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 Question: {question}
 {answers_block}
@@ -547,9 +572,13 @@ Please perform the following three steps:
 3. After reasoning, state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX </verdict>'. For example, '**Final Verdict**: <verdict> Answer3 </verdict>.'"""
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         # Prompt for direct_gen mode
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+        # Prompt for direct_gen mode
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         direct_gen_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
 
 Question: {question}
@@ -558,6 +587,7 @@ Question: {question}
 Based on the question and the provided answers, determine which answer is the most factually correct answer to the question.
 Please provide your explanation first, and then state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX </verdict>'. For example, '**Final Verdict**: <verdict> Answer3 </verdict>.'"""
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         verdict_input_ids = []
         for job in evaluate_jobs:
@@ -572,6 +602,8 @@ Please provide your explanation first, and then state your final verdict in the 
                 final_messages = job["messages"] + [{"role": "user", "content": prompt}]
             else: # direct_gen mode
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         print(f"--- Processing {len(verdict_jobs)} verdict jobs ---")
         verdict_input_ids = []
         for job in verdict_jobs:
@@ -592,11 +624,15 @@ Please provide your explanation first, and then state your final verdict in the 
                     search_summary=formatted_facts
                 )
             else:  # direct_gen mode
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                 prompt = direct_gen_verdict_prompt.format(
                     question=job["original_item"]["question"],
                     answers_block=answers_block
                 )
+<<<<<<< HEAD
 <<<<<<< HEAD
                 final_messages = [{"role": "user", "content": prompt}]
             
@@ -605,6 +641,8 @@ Please provide your explanation first, and then state your final verdict in the 
             ))
 
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
             
             verdict_messages = [{"role": "user", "content": prompt}]
             verdict_input_ids.append(tokenizer.apply_chat_template(
@@ -612,13 +650,17 @@ Please provide your explanation first, and then state your final verdict in the 
             ))
 
         sampling_params = {"max_new_tokens": 1024, "temperature": 0}
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         verdict_responses = batched_sglang_generation(
             input_ids=verdict_input_ids,
             sampling_params=sampling_params,
             engine=engine,
         )
         
+<<<<<<< HEAD
 <<<<<<< HEAD
         for job, response in zip(evaluate_jobs, verdict_responses):
             generated_text = response["text"]
@@ -679,6 +721,8 @@ Please provide your explanation first, and then state your final verdict in the 
             answer["retrieval_path"] = job["messages"]
 
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
         for job, response in zip(verdict_jobs, verdict_responses):
             job["verdict_response"] = response["text"]
 
@@ -751,7 +795,10 @@ Please provide your explanation first, and then state your final verdict in the 
             answer_index = mapping["answer_index"]
             
             job["original_item"]["answers"][answer_index]["verdict_response"] = response["text"]
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 # --- Main Function ---
 def main():
@@ -882,9 +929,12 @@ If you believe you have enough information to answer the question and don't need
         with open(args.output_file, "w", encoding="utf-8") as f_out:
             for job in sorted(jobs, key=lambda x: x["id"]):
 <<<<<<< HEAD
+<<<<<<< HEAD
                 # In pointwise, the verdicts and facts are already in original_item's answers
                 result_item = job["original_item"]
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                 result_item = job["original_item"]
                 extracted_facts = job.get("extracted_facts", [])
                 
@@ -894,7 +944,10 @@ If you believe you have enough information to answer the question and don't need
                     updated_answers.append({**ans, "extracted_facts": extracted_facts, "final_verdict": final_verdict})
                 
                 result_item["answers"] = updated_answers
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                 final_results.append(result_item)
                 f_out.write(json.dumps(result_item, ensure_ascii=False) + "\n")
         
@@ -909,21 +962,28 @@ If you believe you have enough information to answer the question and don't need
             print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
     
 <<<<<<< HEAD
+<<<<<<< HEAD
     else: # best_of_n
         final_results = []
         with open(args.output_file, "w", encoding="utf-8") as f_out:
             for job in sorted(jobs, key=lambda x: x["id"]):
 =======
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
     else:
         final_results = []
         with open(args.output_file, "w", encoding="utf-8") as f_out:
             for job in sorted(jobs, key=lambda x: x["id"]):
                 final_verdict = extract_final_verdict_best_of_n(job.get("verdict_response", ""))
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                 result_item = {
                     **job["original_item"],
                     "search_messages": job.get("messages", []),
                     "extracted_facts": job.get("extracted_facts", []),
+<<<<<<< HEAD
 <<<<<<< HEAD
                     "reasoning_content": job.get("reasoning_content", ""),
                     "verdict_response": job.get("verdict_response", ""),
@@ -932,6 +992,10 @@ If you believe you have enough information to answer the question and don't need
                     "verdict_response": job.get("verdict_response", ""),
                     "final_verdict": final_verdict,
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+                    "verdict_response": job.get("verdict_response", ""),
+                    "final_verdict": final_verdict,
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
                     "search_count": job.get("search_count", 0),
                 }
                 final_results.append(result_item)
@@ -948,6 +1012,7 @@ If you believe you have enough information to answer the question and don't need
         if metrics:
             print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
 <<<<<<< HEAD
+<<<<<<< HEAD
         print(f"Results saved to {args.output_file}")
         
         input_file_name = os.path.basename(args.input_file)
@@ -960,6 +1025,8 @@ If you believe you have enough information to answer the question and don't need
             print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
 =======
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 
 if __name__ == "__main__":

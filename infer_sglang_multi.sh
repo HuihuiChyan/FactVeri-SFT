@@ -1,8 +1,12 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 GPU_INDICES="4,5,6,7"
 =======
 GPU_INDICES="3,4,5,6"
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+GPU_INDICES="3,4,5,6"
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 # Model and dataset parameters
 model_path="/workspace/HFModels/"

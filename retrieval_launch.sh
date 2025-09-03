@@ -1,5 +1,6 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 export CUDA_VISIBLE_DEVICES=6,7
 =======
 export CUDA_VISIBLE_DEVICES=5,6
@@ -7,6 +8,9 @@ export CUDA_VISIBLE_DEVICES=5,6
 =======
 export CUDA_VISIBLE_DEVICES=5,6
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+export CUDA_VISIBLE_DEVICES=5,6
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 file_path=./document
 index_file=$file_path/e5_Flat.index
 corpus_file=$file_path/wiki-18.jsonl

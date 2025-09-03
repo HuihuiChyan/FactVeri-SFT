@@ -22,6 +22,7 @@ python -u inference/infer_classifier.py \
     --model_path $infer_model_path/$infer_model_name \
     --cls-input $cls_input_mode \
 <<<<<<< HEAD
+<<<<<<< HEAD
     --lora_path /workspace/HFModels/Qwen2.5-0.5B-Instruct-RM-trace-LoRA/lora_weights \
     --input_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api.json \
     --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api-cls.json
@@ -29,3 +30,7 @@ python -u inference/infer_classifier.py \
     --input_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
     --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-cls.json \
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+    --input_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
+    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-cls.json \
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)

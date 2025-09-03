@@ -1,8 +1,12 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 export CUDA_VISIBLE_DEVICES=4,5,6,7
 =======
 export CUDA_VISIBLE_DEVICES=3,4,5,6
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+export CUDA_VISIBLE_DEVICES=3,4,5,6
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
 
 model_name=Qwen2.5-0.5B-Instruct
 cls_input=trace
@@ -39,7 +43,10 @@ accelerate launch --deepspeed_config_file examples/deepspeed/ds_z2_config.json i
 =======
     --per_device_train_batch_size 8 \
     --gradient_accumulation_steps 2 \
+<<<<<<< HEAD
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
+=======
+>>>>>>> c28abd3 (ready for combining evaluate and verdict)
     --learning_rate 5e-6 \
     --max_length 1024 \
     --logging_steps 10 \
