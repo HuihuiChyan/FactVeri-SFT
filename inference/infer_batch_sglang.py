@@ -140,25 +140,6 @@ def extract_final_verdict_best_of_n(model_generated_output: str) -> int:
     like <verdict>Answer1</verdict>, and if not found, falls back to searching for
     **Final Verdict**: Answer1.
 
-<<<<<<< HEAD
-=======
-    def _passages2string(retrieval_result):
-        format_reference = ""
-        for idx, doc_item in enumerate(retrieval_result):
-            content = doc_item.get("document", {}).get("contents", "")
-            title = content.split("\n")[0]
-            text = "\n".join(content.split("\n")[1:])
-            format_reference += f"Doc {idx+1}(Title: {title}) {text}\n"
-        return format_reference
-
-    return [_passages2string(results) for results in results_list]
-
-
-# --- Result Evaluation Functions ---
-def extract_final_verdict_best_of_n(model_generated_output: str) -> int:
-    """
-    Extracts the final verdict from the model's output, expecting formats like <verdict>Answer1</verdict>.
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
     Returns a zero-based index (e.g., "Answer1" -> 0).
     """
     if not isinstance(model_generated_output, str):
@@ -186,7 +167,6 @@ def extract_final_verdict_best_of_n(model_generated_output: str) -> int:
             
     return -1 # Return -1 if no match is found
 
-<<<<<<< HEAD
 def extract_final_verdict_pointwise(model_generated_output: str) -> str:
     """
     Extracts the final textual verdict from the model's output. It first looks for
@@ -217,41 +197,6 @@ def extract_final_verdict_pointwise(model_generated_output: str) -> str:
     
     # If no valid pattern is found in the output, return "Invalid"
     return "Invalid"
-=======
-def extract_final_verdict_pointwise(model_generated_output: str):
-    """
-    从模型的输出中提取最终的文本结论。
-
-    此函数查找并返回 <verdict>...</verdict> 标签中包含的文本。
-    它专为“逐点”评估设计，其中的结论是一个描述性字符串（如 "Correct", "Incorrect" 等）。
-
-    Args:
-        model_generated_output: 模型生成的原始字符串。
-
-    Returns:
-        在标签内找到的文本结论 (str)，如果未找到则返回 None。
-    """
-    if not isinstance(model_generated_output, str):
-        return None  # 优雅地处理非字符串输入
-
-    # 正则表达式模式，用于捕获 <verdict> 和 </verdict> 之间的任何文本。
-    # (.*?) 是一个非贪婪捕获组，可以正确处理多行和复杂内容。
-    # re.IGNORECASE 使其不区分大小写 (e.g., <VERDICT>)。
-    # re.DOTALL 允许 '.' 匹配换行符。
-    verdict_pattern = re.compile(r"<verdict>(.*?)</verdict>", re.IGNORECASE | re.DOTALL)
-    
-    matches = verdict_pattern.findall(model_generated_output)
-    
-    if matches:
-        # 如果找到一个或多个匹配项，返回最后一个匹配项。
-        # 这在模型输出包含思考过程和最终结论时很有效。
-        # .strip() 用于移除可能存在的前后多余的空格或换行符。
-        return matches[-1].strip()
-    
-    # 如果在输出中没有找到 verdict 标签，则返回 Intermediate
-    return "Intermediate"
-
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 
 def check_ready_for_evaluation(model_generated_output: str) -> bool:
     """
@@ -260,6 +205,7 @@ def check_ready_for_evaluation(model_generated_output: str) -> bool:
     return "READY_FOR_EVALUATION" in model_generated_output or "READY_FOR_ANSWERING" in model_generated_output
 
 
+def evaluate_final_results_best_of_n(results: List[Dict]):
 def evaluate_final_results_best_of_n(results: List[Dict]):
     """
     Calculates and prints evaluation metrics for a multi-class (best-of-N) scenario.
@@ -315,10 +261,7 @@ def evaluate_final_results_pointwise(results: List[Dict]):
     """
     tp, tn, fp, fn = 0, 0, 0, 0
     total_answers = 0
-<<<<<<< HEAD
     invalid_predictions = 0
-=======
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 
     for item in results:
         # 假设 `results` 列表中的每个 item 都包含一个名为 "answers" 的列表
@@ -331,12 +274,9 @@ def evaluate_final_results_pointwise(results: List[Dict]):
             
             ground_truth_str = answer.get("verify_result", "").lower()
             final_verdict_str = answer.get("final_verdict", "").lower()
-<<<<<<< HEAD
 
             if final_verdict_str == "invalid":
                 invalid_predictions += 1
-=======
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
             
             # 定义正负例的判断标准
             # 基准真相 (Ground truth) 为正例，如果它是 "correct" 或 "intermediate"
@@ -358,21 +298,14 @@ def evaluate_final_results_pointwise(results: List[Dict]):
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-<<<<<<< HEAD
     invalid_ratio = invalid_predictions / total_answers if total_answers > 0 else 0
-=======
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
     
     metrics = {
         "accuracy": accuracy,
         "precision": precision,
         "recall": recall,
-<<<<<<< HEAD
         "f1": f1,
         "invalid_ratio": invalid_ratio,
-=======
-        "f1_score": f1,
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
     }
     
     print("\n--- Pointwise Evaluation Metrics ---")
@@ -384,10 +317,6 @@ def evaluate_final_results_pointwise(results: List[Dict]):
     
     return metrics
 
-<<<<<<< HEAD
-
-=======
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 def batched_sglang_generation(input_ids, sampling_params, engine, BATCH_SIZE=100):
     """Generates text in batches using the SGLang engine."""
     batched_input_ids = [
@@ -512,31 +441,7 @@ def process_evaluation_stage(evaluate_jobs, engine, tokenizer, args):
 
     if args.scheme == "best_of_n":
 
-<<<<<<< HEAD
         best_of_n_verdict_prompt = """Based on the preceding conversation, your task is to first summarize the information you have retrieved, and then determine which answer is the most factually correct for the question.
-=======
-    sampling_params = {"max_new_tokens": 1024, "temperature": 0}
-    summary_responses = batched_sglang_generation(
-        input_ids=summary_input_ids,
-        sampling_params=sampling_params,
-        engine=engine,
-    )
-
-    for job, response in zip(jobs_to_summarize, summary_responses):
-        generated_summary = response["text"]
-        extracted_facts = parse_info_tags(generated_summary)
-        job["extracted_facts"] = extracted_facts
-        job["current_step"] = "verdict"
-
-def process_verdict_stage(verdict_jobs, engine, tokenizer, args):
-    """Processes jobs that are ready for a final verdict."""
-    if not verdict_jobs:
-        return
-    
-    if args.scheme == "best_of_n":
-        # Prompt for local_retrieval mode
-        retrieval_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 
 Question: {question}
 {answers_block}
@@ -546,10 +451,6 @@ Please perform the following three steps:
 2. Based on summarized information, provide your reasoning for the verdict in the format: '**Verdict Reasoning**: <reasoning> Your reasoning process... </reasoning>'.
 3. After reasoning, state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX </verdict>'. For example, '**Final Verdict**: <verdict> Answer3 </verdict>.'"""
 
-<<<<<<< HEAD
-=======
-        # Prompt for direct_gen mode
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
         direct_gen_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine which answer is the most factually correct to the question among the given options.
 
 Question: {question}
@@ -558,7 +459,6 @@ Question: {question}
 Based on the question and the provided answers, determine which answer is the most factually correct answer to the question.
 Please provide your explanation first, and then state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX </verdict>'. For example, '**Final Verdict**: <verdict> Answer3 </verdict>.'"""
 
-<<<<<<< HEAD
         verdict_input_ids = []
         for job in evaluate_jobs:
             answers = job["original_item"]["answers"]
@@ -571,55 +471,22 @@ Please provide your explanation first, and then state your final verdict in the 
                 )
                 final_messages = job["messages"] + [{"role": "user", "content": prompt}]
             else: # direct_gen mode
-=======
-        print(f"--- Processing {len(verdict_jobs)} verdict jobs ---")
-        verdict_input_ids = []
-        for job in verdict_jobs:
-            # Dynamically create the block of answers
-            answers = job["original_item"]["answers"]
-            answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(answers)])
-
-            if args.mode == "local_retrieval":
-                facts = job.get("extracted_facts", [])
-                if not facts:
-                    formatted_facts = "No useful information retrieved."
-                else:
-                    formatted_facts = " ".join([f"{i+1}. {fact}" for i, fact in enumerate(facts)])
-                
-                prompt = retrieval_verdict_prompt.format(
-                    question=job["original_item"]["question"],
-                    answers_block=answers_block,
-                    search_summary=formatted_facts
-                )
-            else:  # direct_gen mode
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                 prompt = direct_gen_verdict_prompt.format(
                     question=job["original_item"]["question"],
                     answers_block=answers_block
                 )
-<<<<<<< HEAD
                 final_messages = [{"role": "user", "content": prompt}]
             
             verdict_input_ids.append(tokenizer.apply_chat_template(
                 conversation=final_messages, tokenize=True, add_generation_prompt=True, enable_thinking=(not args.disable_thinking)
             ))
 
-=======
-            
-            verdict_messages = [{"role": "user", "content": prompt}]
-            verdict_input_ids.append(tokenizer.apply_chat_template(
-                conversation=verdict_messages, tokenize=True, add_generation_prompt=True
-            ))
-
-        sampling_params = {"max_new_tokens": 1024, "temperature": 0}
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
         verdict_responses = batched_sglang_generation(
             input_ids=verdict_input_ids,
             sampling_params=sampling_params,
             engine=engine,
         )
         
-<<<<<<< HEAD
         for job, response in zip(evaluate_jobs, verdict_responses):
             generated_text = response["text"]
             job["verdict_response"] = generated_text
@@ -678,80 +545,6 @@ Please provide your explanation first, and then state your final verdict in the 
             answer["final_verdict"] = extract_final_verdict_pointwise(generated_text)
             answer["retrieval_path"] = job["messages"]
 
-=======
-        for job, response in zip(verdict_jobs, verdict_responses):
-            job["verdict_response"] = response["text"]
-
-    else:
-        # Pointwise  prompt to evaluate each answer individually.
-        pointwise_verdict_prompt = """You are an expert fact-checking assistant. Your task is to determine whether the answer is a factually correct to the question among the given options.
-
-Question: {question}
-{answers_block}
-Retrieved Reference Information: {search_summary}
-
-Based on the question, answer, and the reference information, determine whether the answer is a factually correct answer to the question.
-Please provide your explanation first, and then state your final verdict in the format: 'Therefore, the final verdict is: <verdict> Correct/Incorrect/Intermediate </verdict>'. For example, 'Therefore, the final verdict is: <verdict> Correct </verdict>'"""
-
-        print(f"--- Processing {len(verdict_jobs)} jobs pointwise for verdicts ---")
-
-        # A flat list of all prompts for every answer across all jobs
-        pointwise_input_ids = []
-        # A map to link each prompt back to its original job and answer index
-        response_map = []
-
-        for job in verdict_jobs:
-            question = job["original_item"]["question"]
-            answers = job["original_item"]["answers"]
-
-            # Format retrieved facts, this is consistent for all answers of a single job.
-            facts = job.get("extracted_facts", [])
-            if not facts:
-                formatted_facts = "No useful information retrieved."
-            else:
-                formatted_facts = " ".join([f"{i+1}. {fact}" for i, fact in enumerate(facts)])
-
-            # Iterate through each answer to create a separate pointwise prompt
-            for i, ans in enumerate(answers):
-                # For pointwise, the "answers_block" is just the single answer
-                single_answer_block = f"Answer: {ans['answer']}"
-
-                prompt = pointwise_verdict_prompt.format(
-                    question=question,
-                    answers_block=single_answer_block,
-                    search_summary=formatted_facts
-                )
-                
-                messages = [{"role": "user", "content": prompt}]
-                tokenized_prompt = tokenizer.apply_chat_template(
-                    conversation=messages, tokenize=True, add_generation_prompt=True
-                )
-                pointwise_input_ids.append(tokenized_prompt)
-                
-                # Store a reference to the job and the answer index for this prompt
-                response_map.append({"job": job, "answer_index": i})
-
-        if not pointwise_input_ids:
-            print("No answers found to generate verdicts for.")
-            return
-
-        print(f"--- Generating verdicts for {len(pointwise_input_ids)} individual answers ---")
-        
-        sampling_params = {"max_new_tokens": 1024, "temperature": 0}
-        verdict_responses = batched_sglang_generation(
-            input_ids=pointwise_input_ids,
-            sampling_params=sampling_params,
-            engine=engine,
-        )
-        
-        # Map the generated responses back to their corresponding answers
-        for i, response in enumerate(verdict_responses):
-            mapping = response_map[i]
-            job = mapping["job"]
-            answer_index = mapping["answer_index"]
-            
-            job["original_item"]["answers"][answer_index]["verdict_response"] = response["text"]
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 
 # --- Main Function ---
 def main():
@@ -851,7 +644,6 @@ If you believe you have enough information to answer the question and don't need
         print("--- Search Stage Finished ---")
         # Mark all remaining search jobs as ready for evaluation
         for job in jobs:
-<<<<<<< HEAD
             if job["current_step"] == "search":
                 job["current_step"] = "evaluate"
 
@@ -860,19 +652,6 @@ If you believe you have enough information to answer the question and don't need
     evaluation_jobs = [job for job in jobs if job["current_step"] == "evaluate"]
     process_evaluation_stage(evaluation_jobs, engine, tokenizer, args)
     print("--- Combined Stage Finished ---")
-=======
-            job["current_step"] = "evaluate"
-        evaluation_jobs = [job for job in jobs if job["current_step"] == "evaluate"]
-        process_evaluation_stage(evaluation_jobs, engine, tokenizer, args)
-        print("--- Evaluation Stage Finished ---")
-    
-    # --- Best-of-N final stages ---
-    # Stage 3: Verdict (runs for best_of_n mode)
-    print("--- Starting Verdict Stage ---")
-    verdict_jobs = [job for job in jobs if job["current_step"] == "verdict"]
-    process_verdict_stage(verdict_jobs, engine, tokenizer, args)
-    print("--- Verdict Stage Finished ---")
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
     
     # --- Result Processing and Saving ---
     print("All sequences processed. Saving results...")
@@ -881,20 +660,8 @@ If you believe you have enough information to answer the question and don't need
         final_results = []
         with open(args.output_file, "w", encoding="utf-8") as f_out:
             for job in sorted(jobs, key=lambda x: x["id"]):
-<<<<<<< HEAD
                 # In pointwise, the verdicts and facts are already in original_item's answers
                 result_item = job["original_item"]
-=======
-                result_item = job["original_item"]
-                extracted_facts = job.get("extracted_facts", [])
-                
-                updated_answers = []
-                for ans in result_item.get("answers", []):
-                    final_verdict = extract_final_verdict_pointwise(ans["verdict_response"])
-                    updated_answers.append({**ans, "extracted_facts": extracted_facts, "final_verdict": final_verdict})
-                
-                result_item["answers"] = updated_answers
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                 final_results.append(result_item)
                 f_out.write(json.dumps(result_item, ensure_ascii=False) + "\n")
         
@@ -908,35 +675,32 @@ If you believe you have enough information to answer the question and don't need
         if metrics:
             print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
     
-<<<<<<< HEAD
     else: # best_of_n
         final_results = []
         with open(args.output_file, "w", encoding="utf-8") as f_out:
             for job in sorted(jobs, key=lambda x: x["id"]):
-=======
-    else:
-        final_results = []
-        with open(args.output_file, "w", encoding="utf-8") as f_out:
-            for job in sorted(jobs, key=lambda x: x["id"]):
-                final_verdict = extract_final_verdict_best_of_n(job.get("verdict_response", ""))
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                 result_item = {
                     **job["original_item"],
                     "search_messages": job.get("messages", []),
                     "extracted_facts": job.get("extracted_facts", []),
-<<<<<<< HEAD
                     "reasoning_content": job.get("reasoning_content", ""),
                     "verdict_response": job.get("verdict_response", ""),
                     "final_verdict": job.get("final_verdict", -1),
-=======
-                    "verdict_response": job.get("verdict_response", ""),
-                    "final_verdict": final_verdict,
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                     "search_count": job.get("search_count", 0),
                 }
                 final_results.append(result_item)
                 f_out.write(json.dumps(result_item, ensure_ascii=False) + "\n")
 
+        print(f"Results saved to {args.output_file}")
+        
+        input_file_name = os.path.basename(args.input_file)
+        model_name = os.path.basename(args.model_path)
+        print(f"\nDataset: {input_file_name}\nModel: {model_name}\nMode: {args.mode}")
+        
+        print("Starting evaluation...")
+        metrics = evaluate_final_results_best_of_n(final_results)
+        if metrics:
+            print(f"Evaluation metrics: {json.dumps(metrics, indent=4)}")
         print(f"Results saved to {args.output_file}")
         
         input_file_name = os.path.basename(args.input_file)

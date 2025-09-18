@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 export CUDA_VISIBLE_DEVICES=6
-=======
-export CUDA_VISIBLE_DEVICES=7
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 
 model_path=/workspace/HFModels/
 model_name=Qwen3-4B
