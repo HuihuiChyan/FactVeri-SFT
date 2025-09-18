@@ -96,7 +96,10 @@ def main():
         "--cls-input",
         type=str,
         choices=("facts", "naive", "trace"),
+<<<<<<< HEAD
         choices=("facts", "naive", "trace"),
+=======
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74
         default="naive"
     )
     args = parser.parse_args()
@@ -136,11 +139,19 @@ def main():
 
             for i, answer_item in enumerate(answers):
                 
+<<<<<<< HEAD
                 # 应用聊天模板将输入格式化为对话
                 conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
                 inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=args.max_length).to(model.device)
                 
                 # 从分类器获取原始的logit分数
+=======
+                # Apply the chat template to format the input as a conversation
+                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
+                inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
+                
+                # Get the raw logit score from the classifier
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                 score = model(**inputs).logits.item()
                 answer_scores.append(score)
                 # 可选：为每个答案保存分数

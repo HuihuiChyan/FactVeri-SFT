@@ -136,6 +136,7 @@ nq_hotpotqa_train/
 
 trash-bin/
 
+<<<<<<< HEAD
 results/
 
 verl/
@@ -143,3 +144,6 @@ verl/
 verl-old/
 
 cache
+=======
+results/
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74

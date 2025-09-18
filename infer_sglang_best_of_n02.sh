@@ -6,7 +6,11 @@ model_name=Qwen3-4B
 mode=local_retrieval # choose between local_retrieval and direct_gen
 scheme=best_of_n
 <<<<<<< HEAD
+<<<<<<< HEAD
 dataset=qasc
+=======
+dataset=2wiki
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 =======
 dataset=2wiki
 >>>>>>> c28abd39de82311c8121c468ee7d402705868a74
