@@ -5,7 +5,11 @@ model_path=/workspace/HFModels/
 model_name=Qwen3-4B
 mode=local_retrieval # choose between local_retrieval and direct_gen
 scheme=best_of_n
+<<<<<<< HEAD
 dataset=qasc
+=======
+dataset=2wiki
+>>>>>>> c28abd39de82311c8121c468ee7d402705868a74
 dataset_path=/workspace/FactVeri-SFT/corpora/$dataset
 dataset_name_without_ext=$dataset\_selection
 python -u inference/infer_batch_sglang.py \
