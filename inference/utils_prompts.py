@@ -13,12 +13,9 @@ Answer: {answer}
 
 Based on the question, answer, determine if the answer is factually correct or not."""
 
-POINTWISE_VERDICT_PROMPT = """Based on the preceding conversation, your task is to first summarize the information you have retrieved, and then determine if the provided answer is factually correct for the question.
+POINTWISE_VERDICT_PROMPT = """Based on the preceding conversation, your task is to determine if the provided answer is factually correct for the question.
 
 Question: {question}
 Answer: {answer}
 
-Please perform the following three steps:
-1. Summarize the useful information from the retrieval results in the format: '**Useful Information**: <facts> Fact 1; Fact 2; Fact 3 </facts>'. If no useful information was found, use '**Useful Information**: <facts> No useful information retrieved. </facts>'.
-2. Based on summarized information, provide your reasoning for the verdict in the format: '**Verdict Reasoning**: <reasoning> Your reasoning process... </reasoning>'.
-3. After reasoning, state your final verdict in the format: '**Final Verdict**: <verdict> Correct/Incorrect/Intermediate </verdict>'."""
+Please first provide your explanation, and then state your final verdict in the format: '**Final Verdict**: <verdict> Correct/Incorrect/Intermediate </verdict>'."""

@@ -1,6 +1,6 @@
-export CUDA_VISIBLE_DEVICES=7
+export CUDA_VISIBLE_DEVICES=4
 
-DATA=2wiki
+DATA=triviaqa
 
 MODELS=(
     "Llama-3.1-8B-Instruct" 
@@ -26,7 +26,7 @@ MODELS=(
 
 # if [ ! -f ./corpora/$DATA/$DATA\_generation.jsonl ]; then
 #     echo "./corpora/$DATA/$DATA\_generation.jsonl does not exist. Constructing it."
-#     cp ./corpora/$DATA/$DATA\_filtering.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
+#     cp ./corpora/$DATA/$DATA\_question.jsonl ./corpora/$DATA/$DATA\_generation.jsonl
 # fi
 
 # for MODEL in "${MODELS[@]}"
@@ -39,26 +39,26 @@ MODELS=(
 #         --phase "generation"
 # done
 
+# MODEL="/workspace/HFModels/Qwen2.5-14B-Instruct"
+# python inference/generate_answer.py \
+#     --model-type vllm \
+#     --model-path $MODEL \
+#     --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#     --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+#     --phase "evaluation" \
+#     --multi-process "True"
+
+# python inference/generate_answer.py \
+#     --model-type vllm \
+#     --model-path /workspace/HFModels/$MODEL \
+#     --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+#     --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
+#     --phase "selection"
+
 MODEL="gpt-4o"
 python inference/generate_answer.py \
     --model-type api \
     --model-path $MODEL \
-    --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-    --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-    --phase "evaluation" \
-    --multi-process "True"
-
-python inference/generate_answer.py \
-    --model-type vllm \
-    --model-path /workspace/HFModels/$MODEL \
-    --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-    --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
-    --phase "selection"
-
-# MODEL="Qwen2.5-14B-Instruct"
-# python inference/generate_answer.py \
-#     --model-type vllm \
-#     --model-path /workspace/HFModels/$MODEL \
-#     --input-file ./corpora/$DATA/$DATA\_selection.jsonl \
-#     --output-file ./corpora/$DATA/$DATA\_verification.jsonl \
-#     --phase "verification"
+    --input-file ./corpora/$DATA/$DATA\_selection.jsonl \
+    --output-file ./corpora/$DATA/$DATA\_verification.jsonl \
+    --phase "verification"

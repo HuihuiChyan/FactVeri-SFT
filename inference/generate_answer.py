@@ -15,7 +15,8 @@ import pandas as pd
 import random
 from transformers import AutoTokenizer
 
-EVALUATION_PROMPT = """You are an expert fact-checking assistant. Your task is to determine if the answer to a question is correct. 
+# Prompt for single-answer classification (Step 1 of evaluation)
+CLASSIFICATION_PROMPT = """You are an expert fact-checking assistant. Your task is to determine if the answer to a question is correct.
 
 The verification result can be Correct, Incorrect, Intermediate or Irrelevant, with the following meanings:
 * Correct: The answer is accurate and aligns with the Golden Answer.
@@ -32,20 +33,6 @@ Here are some examples:
 - Intermediate Answer: The longest bridge was opended in 2011.
 - Irrelevant Answer: The longest bridge in the world is Danyang-Kunshan Grand Bridge.
 
-- Question: What's the capital of the state that Harvard University is in?
-- Golden Answer: Boston.
-- Correct Answer: Harvard University is in the state of Massachusetts, and the capital of Massachusetts is Boston. 
-- Incorrect Answer: The capital of the state that Harvard University is in Cambridge.
-- Intermediate Answer: Harvard University is located in Boston, the capital of Massachusetts.
-- Irrelevant Answer: I am sorry, I don't have access to the information of this question.
-
-- Question: What's the capital of the state that Harvard University is in?
-- Golden Answer: Boston.
-- Correct Answer: Harvard University is in the state of Massachusetts, and the capital of Massachusetts is Boston. 
-- Incorrect Answer: The capital of the state that Harvard University is in Cambridge.
-- Intermediate Answer: Harvard University is located in Boston, the capital of Massachusetts.
-- Irrelevant Answer: I am sorry, I don't have access to the information of this question.
-
 Here are the question and answer that require your fact-checking:
 
 - Question: {question}
@@ -55,14 +42,45 @@ Here are the question and answer that require your fact-checking:
 Please first provide your explanation and then, on a new line, conclude with the form of "Therefore, the verification result is: Correct/Incorrect/Intermediate/Irrelevant."
 """
 
-# 初始化函数，供 multiprocessing.Pool 使用，用于传递共享变量
+# A dedicated prompt for the verification step to rank the three selected answers.
+VERIFICATION_RANKING_PROMPT = """You are a strict evaluator. Your task is to rank the following three answers based on their factual correctness compared to the golden answer.
+Only focus on factuality, ignoring other factors such as helpfulness or detailedness.
+
+The ranking order should be from most factually correct to least factually correct.
+
+Please first provide your explanation for the ranking. Then, on a new line, provide a final verdict with the following format: Therefore, the ranking is: Answer X > Answer Y > Answer Z.
+For example, if Answer 2 is the best, Answer 1 is the second best, and Answer 3 is the worst, the format should be: Therefore, the ranking is: Answer 2 > Answer 1 > Answer 3
+
+- Question: {question}
+- Golden Answer: {reference}
+- Answer 1: {answer1}
+- Answer 2: {answer2}
+- Answer 3: {answer3}
+"""
+
+
+# Helper function to parse the full ranking from the LLM's response.
+def parse_evaluation_ranking(response_text: str):
+    """Parses a ranking string 'Answer X > Answer Y > ...' and returns a list of integers."""
+    match = re.search(r"ranking is:([\s\S]*)", response_text, re.IGNORECASE)
+    if not match:
+        return None
+    
+    ranking_part = match.group(1)
+    # Find all numbers that follow "Answer "
+    numbers = re.findall(r'Answer\s*(\d+)', ranking_part)
+    if numbers:
+        return [int(n) for n in numbers]
+    return None
+
+# Initialization function for multiprocessing.Pool to pass shared variables
 def init_worker(c, t):
     global counter
     global start_time
     counter = c
     start_time = t
 
-@timeout_decorator.timeout(120) # 设置每个 API 请求的超时时间为 120 秒
+@timeout_decorator.timeout(120) # Set a 120-second timeout for each API request
 def request_gpt(messages: dict, model: str, temperature: float) -> dict:
     api_key = "sk-agEcX3Su78Bu09c2F49978C6Ba424977B936C8710fAb42E0"
     client = openai.OpenAI(api_key=api_key, base_url="https://api.shubiaobiao.cn/v1/")
@@ -76,6 +94,7 @@ def request_gpt(messages: dict, model: str, temperature: float) -> dict:
         try:
             chat_completion = client.chat.completions.create(model=payload['model'], temperature=temperature, messages=payload['messages'])
             res = chat_completion.choices[0].message.content
+            break # Exit loop on success
         except Exception as e:
             print("Exception! The exception is "+str(e))
             time.sleep(5)
@@ -107,8 +126,10 @@ Please first provide your explanation and then conclude in a new line with 'This
     
     print(f"Totally {len(inputs)} lines for inference:")
     if args.multi_process == "False":
+        responses = []
         for line in tqdm.tqdm(inputs):
-            responses = request_gpt(line, model=args.model_path, temperature=args.temperature)
+            response = request_gpt(line, model=args.model_path, temperature=args.temperature)
+            responses.append(response)
     else:
         pool_fn = partial(request_gpt, model=args.model_path, temperature=args.temperature)
         responses = pool.map(pool_fn, inputs)
@@ -120,254 +141,91 @@ Please first provide your explanation and then conclude in a new line with 'This
 
     return filtered_lines
 
-def compare_answers_vllm(lines, args):
-    # Modified prompt template for pairwise comparison
-    prompt_template = """You are a strict evaluator. Your task is to determine which of the following answers is more factually correct based on the golden answer.
-Only focus on factuality correctness, ignoring other factors such as helpfulness or detailedness.
-Please first provide your explanation and then, on a new line, provide a final verdict with the following format: "Therefore, the most accuract answer is <Answer> Answer 1/2/3/4 </Answer>." For example, "Therefore, the most accuract answer is <Answer> Answer 3 </Answer>."
-Do not generate any other openings, closings or explanations.
+# Worker function for the API-based classification.
+def classify_line_api(line, model, temperature):
+    """Classifies each answer in a single line individually."""
+    classified_answers = []
+    for answer in line.get('answers', []):
+        messages = [{"role": "user", "content": CLASSIFICATION_PROMPT.format(question=line['question'], answer=answer['answer'], reference=line['reference'])}]
+        response = request_gpt(messages, model=model, temperature=temperature)
 
-- Question: {question}
-- Golden Answer: {reference}
-- Answer 1: {answer1}
-- Answer 2: {answer2}
-- Answer 3: {answer3}
-- Answer 4: {answer4}
-"""
-    
-    # Initialize VLLM model and tokenizer
-    llm = vllm.LLM(model=args.model_path, tensor_parallel_size=torch.cuda.device_count())
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
-    sampling_params = vllm.SamplingParams(
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-    )
-    
-    prompts = []
-
-    for line in lines:
-
-        answer1 = line["answers"][0]["answer"]
-        answer2 = line["answers"][1]["answer"]
-        answer3 = line["answers"][2]["answer"]
-        answer4 = line["answers"][3]["answer"]
-        
-        question = line["question"]
-        
-        # Handle reference answer formatting, which might be a list
-        reference = line["reference"]
-        if isinstance(reference, list):
-            reference = reference[0] if len(reference) == 1 else str(reference)
-        
-        # Construct the chat message for the model
-        messages = [
-            {"role": "user", "content": prompt_template.format(
-                question=question,
-                answer1=answer1,
-                answer2=answer2,
-                answer3=answer3,
-                answer4=answer4,
-                reference=reference,
-            )}
-        ]
-        
-        # Apply the chat template to get the final prompt string
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        prompts.append(prompt)
-
-    # Generate outputs for all prompts in a batch
-    outputs = llm.generate(prompts, sampling_params)
-    
-    output_results = []
-    # Process the outputs and extract the verdict and explanation
-    for i, output in enumerate(outputs):
-        response = output.outputs[0].text.strip()
-        
-        # Use regex to find the verdict number inside the <Answer> tags
-        match = re.search(r"<Answer> Answer (\d+) </Answer>", response)
-        
-        if match and int(match.group(1)) == (lines[i]["verify_result"]+1):
-            new_line = {**lines[i], "varify_result": response}
-            output_results.append(new_line)
-
-    return output_results
-
-def validate_line(line, model, temperature):
-
-    # Modified prompt template for pairwise comparison
-    prompt_template = """You are a strict evaluator. Your task is to determine which of the following answers is more factually correct based on the golden answer.
-Only focus on factuality correctness, ignoring other factors such as helpfulness or detailedness.
-Please first provide your explanation and then, on a new line, provide a final verdict with the following format: Therefore, the most accuract answer is <Answer> Answer 1/2/3/4 </Answer>. For example,  the most accuract answer is <Answer> Answer 3</Answer>
-Do not generate any other openings, closings or explanations.
-
-- Question: {question}
-- Golden Answer: {reference}
-- Answer 1: {answer1}
-- Answer 2: {answer2}
-- Answer 3: {answer3}
-- Answer 4: {answer4}
-"""
-
-    # 处理参考答案的格式
-    reference = line["reference"]
-    if isinstance(reference, list):
-        reference = reference[0] if len(reference) == 1 else str(reference)
-    
-    # 构建发送给API的prompt
-    messages = [
-        {"role": "user", "content": prompt_template.format(
-            question=line["question"],
-            answer1=line["answer1"]["answer"],
-            answer2=line["answer2"]["answer"],
-            answer3=line["answer3"]["answer"],
-            answer4=line["answer4"]["answer"],
-            reference=reference
-        )}
-    ]
-    
-    response = request_gpt(messages, model=model, temperature=temperature)
-
-    # 解析响应，判断哪个答案更好
-    verify_result = -1
-    if "Answer 1 is more factually correct" in response:
-        verify_result = 0
-    elif "Answer 2 is more factually correct" in response:
-        verify_result = 1
-    
-    # 只保留“Answer 1 更好”的行
-    if verify_result == line["better"]:
-        line["verify_result"] = line["better"]
-        del line["better"]
-        line["verify_reason"] = response
-        return line
-    
-    return None
-
-def evaluate_line(line, args):
-
-    POS_COUNT = 0
-    NEG_COUNT = 0
-    new_answers = []
-    for j, answer in enumerate(line["answers"]):
-        messages =  [
-            {"role": "user", "content": EVALUATION_PROMPT.format(question=line['question'], answer=answer["answer"], reference=line["reference"])}
-        ]
-        response = request_gpt(messages, model=args.model_path, temperature=args.temperature)
-
-        if response == "":
-            verfication = "irrelevant"
+        if not response:
+            verification = "irrelevant"
         else:
-            verfication = response.split()[-1].strip().lower().rstrip(".")
-            if "incorrect" in response.split()[-1].strip().lower():
-                verfication = "incorrect"
-            elif "correct" in response.split()[-1].strip().lower():
-                verfication = "correct"
-            elif "intermediate" in response.split()[-1].strip().lower():
-                verfication = "intermediate"
+            last_part = response.split(":")[-1].strip().lower().rstrip(".")
+            if "incorrect" in last_part:
+                verification = "incorrect"
+            elif "correct" in last_part:
+                verification = "correct"
+            elif "intermediate" in last_part:
+                verification = "intermediate"
             else:
-                verfication = "irrelevant"
-
-        if verfication == "correct":
-            POS_COUNT += 1
-        elif verfication in ["incorrect", "intermediate"]:
-            NEG_COUNT += 1
-
-        line["answers"][j]["verfy_reason"] = response
-        line["answers"][j]["verfy_result"] = verfication
-        new_answers.append(line["answers"][j])
-
-        if POS_COUNT >= 1 and NEG_COUNT >= args.negative_num:
-            break
+                verification = "irrelevant"
+        
+        new_answer = answer.copy()
+        new_answer['verfy_result'] = verification
+        classified_answers.append(new_answer)
     
-    line["answers"] = new_answers
-
+    line['answers'] = classified_answers
     return line
 
+# Evaluation phase for API now only does classification.
 def evaluate_answers_api(lines, args):
-            
-    for line in lines:
-        unique_answers = {}
-        random.shuffle(line["answers"])
-        for answer in line["answers"]:
-            if answer["answer"] not in unique_answers:
-                unique_answers[answer["answer"]] = answer
-        line["answers"] = list(unique_answers.values())
+    pool_fn = partial(classify_line_api, model=args.model_path, temperature=args.temperature)
 
     if args.multi_process == "False":
-        new_lines = []
-        for line in tqdm.tqdm(lines):
-            new_line = evaluate_line(line, args=args)
-            new_lines.append(new_line)
+        new_lines = [classify_line_api(line, model=args.model_path, temperature=args.temperature) for line in tqdm.tqdm(lines)]
     else:
-        pool_fn = partial(evaluate_line, args=args)
         new_lines = pool.map(pool_fn, lines)
-
+    
     return new_lines
 
+# Evaluation phase for vLLM now only does classification.
 def evaluate_answers_vllm(lines, args):
+    llm = vllm.LLM(model=args.model_path, tensor_parallel_size=torch.cuda.device_count())
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    sampling_params = vllm.SamplingParams(temperature=args.temperature, max_tokens=args.max_tokens)
 
-    inputs = []
-    for line in lines:
-        for answer in line["answers"]:
-            messages =  [
-                {"role": "user", "content": EVALUATION_PROMPT.format(question=line['question'], answer=answer["answer"], reference=line["reference"])}
-            ]
-            inputs.append(messages)
-
-    llm = vllm.LLM(model=args.model_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path, tensor_parallel_size=torch.cuda.device_count())
-    sampling_params = vllm.SamplingParams(
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-    )
-    prompts = [tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True, enable_thinking=False) for prompt in inputs]
-
-    outputs = llm.generate(prompts, sampling_params)
-    responses = [output.outputs[0].text.strip() for output in outputs]
+    classification_prompts = []
+    prompt_metadata = [] 
     
-    for i,line in enumerate(lines):
-        for j,answer in enumerate(line["answers"]):
-            response = responses[i*len(line["answers"])+j]
-            try:
-                if "incorrect" in response.split()[-1].strip().lower():
-                    verfication = "incorrect"
-                elif "correct" in response.split()[-1].strip().lower():
-                    verfication = "correct"
-                elif "intermediate" in response.split()[-1].strip().lower():
-                    verfication = "intermediate"
-                else:
-                    verfication = "irrelevant"
-            except:
-                import pdb;pdb.set_trace()
-            lines[i]["answers"][j]["verfy_reason"] = response
-            lines[i]["answers"][j]["verfy_result"] = verfication
+    for i, line in enumerate(lines):
+        for j, answer in enumerate(line["answers"]):
+            prompt_content = CLASSIFICATION_PROMPT.format(question=line['question'], answer=answer["answer"], reference=line["reference"])
+            messages = [{"role": "user", "content": prompt_content}]
+            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            classification_prompts.append(prompt)
+            prompt_metadata.append({'line_idx': i, 'answer_idx': j})
 
+    if not classification_prompts:
+        return []
+
+    print(f"Evaluation Phase: Classifying {len(classification_prompts)} answers with vLLM...")
+    classification_outputs = llm.generate(classification_prompts, sampling_params)
+
+    for i, output in enumerate(classification_outputs):
+        response = output.outputs[0].text.strip()
+        metadata = prompt_metadata[i]
+        line_idx, answer_idx = metadata['line_idx'], metadata['answer_idx']
+        
+        last_part = response.split(":")[-1].strip().lower().rstrip(".")
+        if "incorrect" in last_part:
+            verification = "incorrect"
+        elif "correct" in last_part:
+            verification = "correct"
+        elif "intermediate" in last_part:
+            verification = "intermediate"
+        else:
+            verification = "irrelevant"
+            
+        lines[line_idx]['answers'][answer_idx]['verfy_result'] = verification
+    
     return lines
 
-def compare_answers_api(lines, args):
-    
-    if args.multi_process == "False":
-        new_lines = []
-        for line in tqdm.tqdm(lines):
-            new_line = validate_line(line, model=args.model_path, temperature=args.temperature)
-            new_lines.append(new_line)
-    else:
-        pool_fn = partial(validate_line, model=args.model_path, temperature=args.temperature)
-        new_lines = pool.map(pool_fn, lines)
-    
-    output_lines = []
-    for line in new_lines:
-        if line is not None:
-            output_lines.append(line)
-
-    return output_lines
-
 def generate_answers_api(lines, args):
-
     raise Exception("Not implemented!")
 
 def generate_answers_vllm(lines, args):
-
     if "answers" in lines[0].keys():
         all_models = [answer['model'] for answer in lines[0]['answers']]
         if args.model_path in all_models:
@@ -378,7 +236,7 @@ def generate_answers_vllm(lines, args):
     sampling_params = vllm.SamplingParams(
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        n=args.num_samples, # 指定每个 prompt 生成的答案数量
+        n=args.num_samples, # Number of answers to generate per prompt
     )
     prompt_template = """Please answer the question following the examples.
 
@@ -403,13 +261,10 @@ Please generate the answer directly, without any openings, closings or additiona
         if "answers" not in line:
             line["answers"] = []
 
-        # 遍历每个 prompt 的所有生成的 outputs
         for output in outputs[i].outputs:
             generated_text = output.text.strip()
             if generated_text.startswith("Answer:"):
-                # 如果是，则从索引 8（"Answer: "的长度）开始切片，移除前缀
                 generated_text = generated_text[8:].strip()
-            # 为每个生成的回答创建一个独立的字典，并添加到 answers 列表中
             line["answers"].append({
                 "model": args.model_path.split("/")[-1],
                 "answer": generated_text, 
@@ -418,92 +273,207 @@ Please generate the answer directly, without any openings, closings or additiona
     return lines
 
 def select_answers(lines, args):
+    """
+    Selects one correct, one incorrect, and one intermediate/irrelevant answer.
+    Discards lines that do not have at least one answer from each category.
+    """
     selected_lines = []
 
     for line in lines:
-        correct_answers = [answer for answer in line["answers"] if answer.get("verfy_result") == "correct"]
-        incorrect_answers = [answer for answer in line["answers"] if answer.get("verfy_result") in ["incorrect", "intermediate"]]
+        answers = line.get("answers", [])
+        
+        # Group answers by their classification result
+        correct_answers = [ans for ans in answers if ans.get('verfy_result') == 'correct']
+        incorrect_answers = [ans for ans in answers if ans.get('verfy_result') == 'incorrect']
+        other_answers = [ans for ans in answers if ans.get('verfy_result') in ['intermediate', 'irrelevant']]
 
-        if len(correct_answers) >= 1 and len(incorrect_answers) >= args.negative_num:
-            positive_answer = random.choice(correct_answers)
-            negative_answers = random.sample(incorrect_answers, k=args.negative_num)
+        # Only proceed if we have at least one of each type of answer
+        if correct_answers and incorrect_answers and other_answers:
+            # Randomly select one answer from each category and order them
+            final_answers = [
+                random.choice(correct_answers),
+                random.choice(other_answers),
+                random.choice(incorrect_answers)
+            ]
 
-            all_answers = [positive_answer] + negative_answers
-            random.shuffle(all_answers)
-
-            correct_answer_index = all_answers.index(positive_answer)
+            # Append the structured data to our output list
             selected_lines.append({
                 "question": line["question"],
                 "reference": line["reference"],
-                "answers": all_answers,
-                "verify_result": correct_answer_index,
+                "answers": final_answers
             })
 
     return selected_lines
 
-if __name__ == "__main__":
+def select_answers_train(lines, args):
+    """
+    Selects one correct, one incorrect, and one intermediate/irrelevant answer.
+    Discards lines that do not have at least one answer from each category.
+    """
+    selected_lines = []
 
+    for line in lines:
+        answers = line.get("answers", [])
+        
+        # Group answers by their classification result
+        correct_answers = [ans for ans in answers if ans.get('verfy_result') == 'correct']
+        incorrect_answers = [ans for ans in answers if ans.get('verfy_result') == 'incorrect']
+
+        # Only proceed if we have at least one of each type of answer
+        if correct_answers and incorrect_answers:
+            # Randomly select one answer from each category and order them
+            correct_answer = random.choice(correct_answers),
+            incorrect_answer = random.choice(incorrect_answers)
+
+            if random.random() > 0.5:
+                final_answers = [correct_answer, incorrect_answer]
+                verify_result = 0
+            
+            else:
+                final_answers = [incorrect_answer, correct_answer]
+                verify_result = 1
+
+            # Append the structured data to our output list
+            selected_lines.append({
+                "question": line["question"],
+                "reference": line["reference"],
+                "answers": final_answers,
+                "verify_result": verify_result,
+            })
+
+    return selected_lines
+
+def verify_line_api(line, model, temperature):
+    """Handles ranking verification for a single line using an API-based model."""
+    if len(line.get("answers", [])) != 3:
+        return None
+    
+    # The ground truth order is already correct > other > incorrect, so we only need to shuffle and check
+    indexed_answers = list(enumerate(line["answers"]))
+    random.shuffle(indexed_answers)
+    
+    shuffled_indices, shuffled_answers = zip(*indexed_answers)
+
+    prompt = VERIFICATION_RANKING_PROMPT.format(
+        question=line["question"],
+        reference=line["reference"],
+        answer1=shuffled_answers[0]['answer'],
+        answer2=shuffled_answers[1]['answer'],
+        answer3=shuffled_answers[2]['answer'],
+    )
+    
+    messages = [{"role": "user", "content": prompt}]
+    response = request_gpt(messages, model=model, temperature=temperature)
+
+    if not response:
+        return None
+
+    llm_ranking = parse_evaluation_ranking(response) 
+    line["verification_reason"] = response
+    
+    # Check if the LLM's ranking matches the ground truth order
+    if llm_ranking and len(llm_ranking) == 3:
+        ranked_ground_truth_indices = [shuffled_indices[i - 1] for i in llm_ranking]
+        is_successful = (ranked_ground_truth_indices == [0, 1, 2])
+        if is_successful:
+            line["ranking_order"] = llm_ranking
+            
+            # Reorder the answers to match the shuffled order for later use
+            line["answers"] = list(shuffled_answers)
+            
+            return line
+    
+    # If not successful or parsing failed, return None to discard the line
+    return None
+
+def verify_answers_api(lines, args):
+    """Verifies if the API model can correctly rank the selected answers."""
+    new_lines = []
+    
+    pool_fn = partial(verify_line_api, model=args.model_path, temperature=args.temperature)
+
+    if args.multi_process == "False":
+        for line in tqdm.tqdm(lines):
+            new_line = verify_line_api(line, model=args.model_path, temperature=args.temperature)
+            if new_line:
+                new_lines.append(new_line)
+    else:
+        processed_lines = pool.map(pool_fn, lines)
+        new_lines = [line for line in processed_lines if line is not None]
+    
+    return new_lines
+
+def verify_answers_vllm(lines, args):
+    """Verifies if the vLLM model can correctly rank the selected answers."""
+    llm = vllm.LLM(model=args.model_path, tensor_parallel_size=torch.cuda.device_count())
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    sampling_params = vllm.SamplingParams(temperature=args.temperature, max_tokens=args.max_tokens)
+    
+    prompts = []
+    shuffled_data_map = [] 
+
+    for line in lines:
+        if len(line.get("answers", [])) != 3:
+            continue
+        
+        # The ground truth order is already correct > other > incorrect, so we only need to shuffle and check
+        indexed_answers = list(enumerate(line["answers"]))
+        random.shuffle(indexed_answers)
+        shuffled_indices, shuffled_answers = zip(*indexed_answers)
+
+        prompt_content = VERIFICATION_RANKING_PROMPT.format(
+            question=line["question"],
+            reference=line["reference"],
+            answer1=shuffled_answers[0]['answer'],
+            answer2=shuffled_answers[1]['answer'],
+            answer3=shuffled_answers[2]['answer'],
+        )
+        messages = [{"role": "user", "content": prompt_content}]
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        prompts.append(prompt)
+        shuffled_data_map.append({'line': line, 'shuffled_indices': shuffled_indices, 'shuffled_answers': shuffled_answers})
+
+    if not prompts:
+        return []
+
+    outputs = llm.generate(prompts, sampling_params)
+    
+    output_results = []
+    for i, output in enumerate(outputs):
+        original_data = shuffled_data_map[i]
+        line = original_data['line']
+        shuffled_indices = original_data['shuffled_indices']
+        shuffled_answers = original_data['shuffled_answers']
+        response = output.outputs[0].text.strip()
+        
+        llm_ranking = parse_evaluation_ranking(response)
+        line["verification_reason"] = response
+
+        if llm_ranking and len(llm_ranking) == 3:
+            ranked_ground_truth_indices = [shuffled_indices[i - 1] for i in llm_ranking]
+            is_successful = (ranked_ground_truth_indices == [0, 1, 2])
+            if is_successful:
+                line["verification_successful"] = True
+                line["llm_ranking_order"] = llm_ranking
+                # Reorder the answers to match the shuffled order for later use
+                line["answers"] = list(shuffled_answers)
+                output_results.append(line)
+        # If not successful, simply skip appending to output_results
+    
+    return output_results
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        default="gpt-4o",
-    )
-    parser.add_argument(
-        "--model-type",
-        type=str,
-        default="api",
-        choices=("api", "vllm"),
-    )
-    parser.add_argument(
-        "--input-file",
-        type=str,
-        default="bamboogle_question.jsonl",
-    )
-    parser.add_argument(
-        "--output-file",
-        type=str,
-        default="bamboogle_process.jsonl",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.7,
-        help="Controls the randomness of the output. Lower values mean less random."
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=4096,
-    )
-    parser.add_argument(
-        "--multi-process",
-        type=str,
-        default="True",
-        choices=["True", "False"],
-        help="Enable or disable multi-processing (True/False)."
-    )
-    parser.add_argument(
-        "--pool-number",
-        type=int,
-        default=10, # 默认进程池数量
-        help="Number of worker processes to use in the pool."
-    )
-    parser.add_argument(
-        "--phase",
-        type=str,
-        choices=("filtering", "generation", "evaluation", "selection", "verification")
-    )
-    parser.add_argument(
-        "--negative-num",
-        type=int,
-        default=3
-    )
-    parser.add_argument(
-        "--num-samples",
-        type=int,
-        default=1
-    )
+    parser.add_argument("--model-path", type=str, default="gpt-4o")
+    parser.add_argument("--model-type", type=str, default="api", choices=("api", "vllm"))
+    parser.add_argument("--input-file", type=str, default="bamboogle_question.jsonl")
+    parser.add_argument("--output-file", type=str, default="bamboogle_process.jsonl")
+    parser.add_argument("--temperature", type=float, default=0.7, help="Controls the randomness of the output. Lower values mean less random.")
+    parser.add_argument("--max-tokens", type=int, default=4096)
+    parser.add_argument("--multi-process", type=str, default="True", choices=["True", "False"], help="Enable or disable multi-processing (True/False).")
+    parser.add_argument("--pool-number", type=int, default=10, help="Number of worker processes to use in the pool.")
+    parser.add_argument("--phase", type=str, choices=("filtering", "generation", "evaluation", "selection", "selection-train", "verification"))
+    parser.add_argument("--num-samples", type=int, default=1)
     args = parser.parse_args()
 
     if args.model_type != "vllm":
@@ -521,30 +491,33 @@ if __name__ == "__main__":
                 print("An abnormal line in jsonl file!")
                 continue
             lines.append(line)
+            
+    # For controlling test data number    
+    # if len(lines) > 2000:
+    #     random.shuffle(lines)
+    #     lines = lines[:2000]
 
     if args.phase == "filtering":
         lines = instruction_filtering(lines, args)
-
-    if args.phase == "generation":
+    elif args.phase == "generation":
         if args.model_type == "vllm":
             lines = generate_answers_vllm(lines, args)
         elif args.model_type == "api":
             lines = generate_answers_api(lines, args)
-
     elif args.phase == "evaluation":
         if args.model_type == "vllm":
             lines = evaluate_answers_vllm(lines, args)
         elif args.model_type == "api":
             lines = evaluate_answers_api(lines, args)
-
     elif args.phase == "selection":
         lines = select_answers(lines, args)
-
+    elif args.phase == "selection-train":
+        lines = select_answers_train(lines, args)        
     elif args.phase == "verification":
         if args.model_type == "vllm":
-            lines = compare_answers_vllm(lines, args)
-        else:
-            lines = compare_answers_api(lines, args)
+            lines = verify_answers_vllm(lines, args)
+        elif args.model_type == "api":
+            lines = verify_answers_api(lines, args)
 
     with open(args.output_file, "w", encoding="utf-8") as fout:
         for line in lines:

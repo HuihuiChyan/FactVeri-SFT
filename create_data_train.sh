@@ -31,28 +31,18 @@ MODELS=(
 #         --phase "generation"
 # done
 
-MODEL="/workspace/HFModels/Qwen3-8B"
+# MODEL="/workspace/HFModels/Qwen3-8B"
+# python inference/generate_answer.py \
+#     --model-type vllm \
+#     --model-path $MODEL \
+#     --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
+#     --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+#     --phase "evaluation" \
+#     --multi-process "True"
+
 python inference/generate_answer.py \
     --model-type vllm \
-    --model-path $MODEL \
-    --input-file ./corpora/$DATA/$DATA\_generation.jsonl \
-    --output-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-    --phase "evaluation" \
-    --negative-num 1 \
-    --multi-process "True"
-
-# python inference/generate_answer.py \
-#     --model-type vllm \
-#     --model-path /workspace/HFModels/$MODEL \
-#     --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
-#     --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
-#     --phase "selection" \
-#     --negative-num 1
-
-# MODEL="Qwen2.5-14B-Instruct"
-# python inference/generate_answer.py \
-#     --model-type vllm \
-#     --model-path /workspace/HFModels/$MODEL \
-#     --input-file ./corpora/$DATA/$DATA\_selection.jsonl \
-#     --output-file ./corpora/$DATA/$DATA\_verification.jsonl \
-#     --phase "verification"
+    --model-path /workspace/HFModels/$MODEL \
+    --input-file ./corpora/$DATA/$DATA\_evaluation.jsonl \
+    --output-file ./corpora/$DATA/$DATA\_selection.jsonl \
+    --phase "selection-train"

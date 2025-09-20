@@ -137,3 +137,5 @@ nq_hotpotqa_train/
 trash-bin/
 
 results/
+
+cache/

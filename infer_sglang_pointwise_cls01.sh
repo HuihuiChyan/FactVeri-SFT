@@ -1,91 +1,26 @@
-<<<<<<< HEAD
 export CUDA_VISIBLE_DEVICES=6
 
 model_path=/workspace/HFModels/
-<<<<<<< HEAD
-model_name=Qwen3-4B
-mode=local_retrieval # choose between local_retrieval and direct_gen
-scheme=pointwise
-<<<<<<< HEAD
-dataset=triviaqa
-search_api=searxng
-=======
-export CUDA_VISIBLE_DEVICES=4
-
-model_path=/workspace/HFModels/
 model_name=Qwen2.5-7B-Instruct
 mode=local_retrieval # choose between local_retrieval and direct_gen
 scheme=pointwise
-<<<<<<<< HEAD:infer_sglang_pointwise_cls03.sh
 dataset=triviaqa
-========
-dataset=2wiki
->>>>>>>> c28abd3 (ready for combining evaluate and verdict):infer_sglang_pointwise_cls01.sh
->>>>>>> c28abd3 (ready for combining evaluate and verdict)
 dataset_path=/workspace/FactVeri-SFT/corpora/$dataset
-dataset_name_without_ext=$dataset\_selection
+dataset_name_without_ext=$dataset\_verification
 python -u inference/infer_batch_sglang.py \
     --model_path $model_path/$model_name \
     --input_file $dataset_path/$dataset_name_without_ext.jsonl \
-<<<<<<< HEAD
-    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api.json \
+    --output_file ./results/$dataset_name_without_ext-$model_name-$mode-$scheme.json \
     --mode $mode \
     --scheme $scheme \
-    --disable_thinking \
-    --search_api $search_api
-=======
-<<<<<<<< HEAD:infer_sglang_pointwise_cls02.sh
-dataset=triviaqa
-search_api=searxng
-========
-dataset=2wiki
->>>>>>>> c28abd39de82311c8121c468ee7d402705868a74:infer_sglang_pointwise_cls01.sh
-=======
-model_name=Qwen2.5-7B-Instruct
-mode=local_retrieval # choose between local_retrieval and direct_gen
-scheme=pointwise
-dataset=2wiki
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-dataset_path=/workspace/FactVeri-SFT/corpora/$dataset
-dataset_name_without_ext=$dataset\_selection
-# python -u inference/infer_batch_sglang.py \
-#     --model_path $model_path/$model_name \
-#     --input_file $dataset_path/$dataset_name_without_ext.jsonl \
-<<<<<<< HEAD
-#     --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api.json \
-#     --mode $mode \
-#     --scheme $scheme \
-#     --disable_thinking \
-#     --search_api $search_api
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-=======
-#     --output_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
-#     --mode $mode \
-#     --scheme $scheme
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-=======
-    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
-    --mode $mode \
-    --scheme $scheme
->>>>>>> c28abd3 (ready for combining evaluate and verdict)
+    --disable_thinking
 
-cls_input_mode=trace
-infer_model_path=/workspace/HFModels
-infer_model_name=Qwen2.5-3B-Instruct-RM-$cls_input_mode/final_model
+# cls_input_mode=trace
+# infer_model_path=/workspace/HFModels
+# infer_model_name=Qwen2.5-3B-Instruct-RM-$cls_input_mode/final_model
 
-python -u inference/infer_classifier.py \
-    --model_path $infer_model_path/$infer_model_name \
-    --cls-input $cls_input_mode \
-<<<<<<< HEAD
-<<<<<<< HEAD
-    --lora_path /workspace/HFModels/Qwen2.5-0.5B-Instruct-RM-trace-LoRA/lora_weights \
-    --input_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api.json \
-    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-$search_api-cls.json
-=======
-    --input_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
-    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-cls.json \
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-=======
-    --input_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
-    --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-cls.json \
->>>>>>> c28abd3 (ready for combining evaluate and verdict)
+# python -u inference/infer_classifier.py \
+#     --model_path $infer_model_path/$infer_model_name \
+#     --cls-input $cls_input_mode \
+#     --input_file ./results/$dataset_name_without_ext-$model_name-$scheme.json \
+#     --output_file ./results/$dataset_name_without_ext-$model_name-$scheme-cls.json \
