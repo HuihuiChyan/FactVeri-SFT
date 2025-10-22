@@ -1,11 +1,13 @@
 import json
 import os
-from ast import literal_eval
 import re
 import time
 import threading
-
 import requests
+import tqdm
+from ast import literal_eval
+from concurrent.futures import ThreadPoolExecutor
+
 
 class SearchAPISerper:
     def __init__(self, search_url="https://google.serper.dev/search"):
@@ -56,6 +58,7 @@ class SearchAPISerper:
         # --- 首先，以线程安全的方式检查缓存 ---
         with self.cache_lock:
             if cache_key in self.cache_dict:
+                print("Loading cache from cache file!")
                 cached_result = self.cache_dict[cache_key]
                 # Return formatted results from cache
                 return self.format_search_results(cached_result)
@@ -129,12 +132,16 @@ class SearchAPISerper:
         if not queries:
             return []
         
+        # results = []
+        # for query in tqdm.tqdm(queries, desc="Searching"):
+        #     result = self.get_search_res(query)
+        #     results.append(result)
+
         results = []
-        for query in queries:
-            
-            import pdb;pdb.set_trace()
-            result = self.get_search_res(query)
-            import pdb;pdb.set_trace()
-            results.append(result)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all tasks to the executor and wrap with tqdm for a progress bar
+            futures = [executor.submit(self.get_search_res, query) for query in queries]
+            for future in tqdm.tqdm(futures, desc="Searching"):
+                results.append(future.result())
 
         return results

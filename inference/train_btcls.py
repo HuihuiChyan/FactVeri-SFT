@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-# 1. 导入所需库
 import torch
 import torch.nn as nn
 from transformers import (
@@ -164,6 +161,10 @@ def main():
     print("模型加载完成。")
 
     if script_args.use_lora:
+        model.save_pretrained(os.path.join(training_args.output_dir, "final_model"))
+        tokenizer.save_pretrained(os.path.join(training_args.output_dir, "final_model"))  # 保存Tokenizer
+
+    if script_args.use_lora:
         # 配置LoRA（仅训练Transformer的qkv层）
         lora_config = LoraConfig(
             r=script_args.lora_r,
@@ -174,18 +175,15 @@ def main():
             task_type="SEQ_CLS",  # 序列分类任务
             modules_to_save=["score"],
         )
-        model = get_peft_model(model, lora_config)  # 应用LoRA
+        training_model = get_peft_model(model, lora_config)  # 应用LoRA
         print("可训练参数统计:")
-        model.print_trainable_parameters()  # 输出：trainable params / all params / trainable%
-
-    # model.base_model.model.score.original_module.requires_grad  # should be False
-    # model.base_model.model.score.modules_to_save["default"].weight.requires_grad  # should be True
-    # model.base_model.model.score.active_adapter  # should be 'default'
-    # import pdb;pdb.set_trace()
+        training_model.print_trainable_parameters()  # 输出：trainable params / all params / trainable%
+    else:
+        training_model = model
     
     # --- 实例化 Trainer ---
     trainer = PairwiseLossTrainer(
-        model=model,
+        model=training_model,
         args=training_args, # 直接使用解析好的 training_args
         train_dataset=tokenized_datasets,
         tokenizer=tokenizer,
@@ -200,11 +198,12 @@ def main():
     trainer.train()
     
     # 保存最终模型
-    trainer.save_model(os.path.join(training_args.output_dir, "final_model"))
-    tokenizer.save_pretrained(training_args.output_dir)  # 保存Tokenizer
     if script_args.use_lora:
         lora_save_dir = os.path.join(training_args.output_dir, "lora_weights")
-        model.save_pretrained(lora_save_dir) 
+        training_model.save_pretrained(lora_save_dir)
+    else:
+        trainer.save_model(os.path.join(training_args.output_dir, "final_model"))
+        tokenizer.save_pretrained(os.path.join(training_args.output_dir, "final_model"))  # 保存Tokenizer   
     
     print("训练完成，模型已保存。")
 

@@ -163,7 +163,7 @@ def classify_line_api(line, model, temperature):
                 verification = "irrelevant"
         
         new_answer = answer.copy()
-        new_answer['verfy_result'] = verification
+        new_answer['verify_result'] = verification
         classified_answers.append(new_answer)
     
     line['answers'] = classified_answers
@@ -218,7 +218,7 @@ def evaluate_answers_vllm(lines, args):
         else:
             verification = "irrelevant"
             
-        lines[line_idx]['answers'][answer_idx]['verfy_result'] = verification
+        lines[line_idx]['answers'][answer_idx]['verify_result'] = verification
     
     return lines
 
@@ -283,9 +283,9 @@ def select_answers(lines, args):
         answers = line.get("answers", [])
         
         # Group answers by their classification result
-        correct_answers = [ans for ans in answers if ans.get('verfy_result') == 'correct']
-        incorrect_answers = [ans for ans in answers if ans.get('verfy_result') == 'incorrect']
-        other_answers = [ans for ans in answers if ans.get('verfy_result') in ['intermediate', 'irrelevant']]
+        correct_answers = [ans for ans in answers if ans.get('verify_result') == 'correct']
+        incorrect_answers = [ans for ans in answers if ans.get('verify_result') == 'incorrect']
+        other_answers = [ans for ans in answers if ans.get('verify_result') in ['intermediate', 'irrelevant']]
 
         # Only proceed if we have at least one of each type of answer
         if correct_answers and incorrect_answers and other_answers:
@@ -301,44 +301,6 @@ def select_answers(lines, args):
                 "question": line["question"],
                 "reference": line["reference"],
                 "answers": final_answers
-            })
-
-    return selected_lines
-
-def select_answers_train(lines, args):
-    """
-    Selects one correct, one incorrect, and one intermediate/irrelevant answer.
-    Discards lines that do not have at least one answer from each category.
-    """
-    selected_lines = []
-
-    for line in lines:
-        answers = line.get("answers", [])
-        
-        # Group answers by their classification result
-        correct_answers = [ans for ans in answers if ans.get('verfy_result') == 'correct']
-        incorrect_answers = [ans for ans in answers if ans.get('verfy_result') == 'incorrect']
-
-        # Only proceed if we have at least one of each type of answer
-        if correct_answers and incorrect_answers:
-            # Randomly select one answer from each category and order them
-            correct_answer = random.choice(correct_answers),
-            incorrect_answer = random.choice(incorrect_answers)
-
-            if random.random() > 0.5:
-                final_answers = [correct_answer, incorrect_answer]
-                verify_result = 0
-            
-            else:
-                final_answers = [incorrect_answer, correct_answer]
-                verify_result = 1
-
-            # Append the structured data to our output list
-            selected_lines.append({
-                "question": line["question"],
-                "reference": line["reference"],
-                "answers": final_answers,
-                "verify_result": verify_result,
             })
 
     return selected_lines
@@ -510,9 +472,7 @@ if __name__ == "__main__":
         elif args.model_type == "api":
             lines = evaluate_answers_api(lines, args)
     elif args.phase == "selection":
-        lines = select_answers(lines, args)
-    elif args.phase == "selection-train":
-        lines = select_answers_train(lines, args)        
+        lines = select_answers(lines, args)     
     elif args.phase == "verification":
         if args.model_type == "vllm":
             lines = verify_answers_vllm(lines, args)

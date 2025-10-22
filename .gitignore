@@ -126,7 +126,7 @@ document/
 corpora/hotpotqa/hotpotqa_train/
 
 nq_hotpot_train_head/
-nq_hotpotqa_train/
+nq_hotpot_train/
 
 *evaluation.jsonl
 *filtering.jsonl
@@ -139,3 +139,7 @@ trash-bin/
 results/
 
 cache/
+
+corpora/hotpotqa/*.json
+corpora/nq_test/*.json
+corpora/triviaqa/*.json

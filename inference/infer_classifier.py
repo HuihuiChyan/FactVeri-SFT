@@ -11,47 +11,11 @@ from sklearn.metrics import (
     balanced_accuracy_score,
 )
 from typing import List, Dict
+from scipy.stats import kendalltau
 from process_cls_input import create_prompt_for_cls
 # 导入peft库以支持LoRA
 from peft import PeftModel
-
-def evaluate_final_results(results: List[Dict]):
-    """
-    为多分类（best-of-N）场景计算并打印评估指标。
-    """
-    y_true, y_pred = [], []
-
-    for item in results:
-        # 数据集中的真实标签
-        true_label = item.get("verify_result") 
-        # 分类器做出的预测
-        pred_label = item.get("prediction")
-
-        if true_label is None:
-            continue  # 跳过没有真实标签的项
-
-        y_true.append(true_label)
-        y_pred.append(pred_label)
-
-    if not y_true:
-        print("评估失败。未找到有效的真实标签。")
-        return None
-
-    # 对多分类的 precision, recall, 和 F1 使用 'macro' 平均
-    metrics_dict = {
-        "accuracy": round(accuracy_score(y_true, y_pred), 4),
-        "balanced_accuracy": round(balanced_accuracy_score(y_true, y_pred), 4),
-        "precision": round(precision_score(y_true, y_pred, average='macro', zero_division=0), 4),
-        "recall": round(recall_score(y_true, y_pred, average='macro', zero_division=0), 4),
-        "f1": round(f1_score(y_true, y_pred, average='macro', zero_division=0), 4),
-        "evaluated_count": len(results),
-    }
-
-    print("\n--- 评估结果 ---")
-    for key, value in metrics_dict.items():
-        print(f"{key.replace('_', ' ').title()}: {value}")
-    print("--------------------------\n")
-    return metrics_dict
+from infer_batch_sglang import evaluate_final_results_ranking
 
 def main():
     """主函数，运行分类和评估。"""
@@ -76,7 +40,6 @@ def main():
         action="store_true", # 当命令行包含 --use_lora 时，此参数为 True
         help="启用LoRA进行推理。",
     )
-    # ----------------------
     parser.add_argument(
         "--input_file",
         type=str,
@@ -93,17 +56,10 @@ def main():
         default=4096,
     )
     parser.add_argument(
-        "--cls-input",
+        "--cls_input",
         type=str,
-        choices=("facts", "naive", "trace"),
-<<<<<<< HEAD
-<<<<<<< HEAD
-        choices=("facts", "naive", "trace"),
-=======
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
-=======
->>>>>>> c28abd3 (ready for combining evaluate and verdict)
-        default="naive"
+        choices=("direct_input", "full_history", "sum_history", "only_facts"),
+        default="full_history"
     )
     args = parser.parse_args()
 
@@ -132,7 +88,7 @@ def main():
 
     print(f"从 {args.input_file} 加载数据...")
     with open(args.input_file, "r", encoding="utf-8") as fin:
-        lines = [json.loads(line) for line in fin.readlines()]
+        lines = [json.loads(line) for line in fin]
 
     final_results = []
     with torch.no_grad():
@@ -141,31 +97,26 @@ def main():
             answer_scores = []
 
             for i, answer_item in enumerate(answers):
-                
-<<<<<<< HEAD
-<<<<<<< HEAD
-                # 应用聊天模板将输入格式化为对话
-                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
+                # Create prompt using the specified cls_input mode
+                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer)
                 inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=args.max_length).to(model.device)
                 
-                # 从分类器获取原始的logit分数
-=======
-=======
->>>>>>> c28abd3 (ready for combining evaluate and verdict)
-                # Apply the chat template to format the input as a conversation
-                conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer) 
-                inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
-                
                 # Get the raw logit score from the classifier
->>>>>>> c28abd39de82311c8121c468ee7d402705868a74
                 score = model(**inputs).logits.item()
                 answer_scores.append(score)
-                # 可选：为每个答案保存分数
+                # Optionally save the score for each answer
                 answer_item["factuality_score"] = score
 
             # 预测结果是得分最高的答案的索引
             prediction = answer_scores.index(max(answer_scores))
             item["prediction"] = prediction
+            predicted_ranking = sorted(
+                range(len(answer_scores)), 
+                key=lambda k: answer_scores[k], 
+                reverse=True
+            )
+            predicted_ranking = [p+1 for p in predicted_ranking] # index starts from 1
+            item["predicted_ranking"] = predicted_ranking
             final_results.append(item)
 
     print(f"将带有预测的结果保存到 {args.output_file}...")
@@ -174,9 +125,8 @@ def main():
             f_out.write(json.dumps(result, ensure_ascii=False) + "\n")
 
     print("开始最终评估...")
-    metrics = evaluate_final_results(final_results)
-    if metrics:
-        print(f"最终评估指标: {json.dumps(metrics, indent=4)}")
+    ranking_metrics = evaluate_final_results_ranking(final_results)
+    print(f"排序评估指标: {json.dumps(ranking_metrics, indent=4)}")
 
 if __name__ == "__main__":
     main()
