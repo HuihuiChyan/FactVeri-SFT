@@ -35,7 +35,7 @@ class SearchAPISearxng:
         Searxng API 返回的结果在 'results' 键中，包含 'title', 'content', 'url' 字段。
         """
         if not search_json or not search_json.get("results"):
-            return "No results found."
+            return "\nNo results found."
 
         formatted_str = ""
         results = search_json.get("results", [])
@@ -165,7 +165,7 @@ class SearchAPISearxng:
         with ThreadPoolExecutor(max_workers=10) as executor:
             # Submit all tasks to the executor and wrap with tqdm for a progress bar
             futures = [executor.submit(self.get_search_res, query) for query in queries]
-            for future in tqdm.tqdm(futures, desc="检索中"):
+            for future in tqdm.tqdm(futures, desc="Searching from Searxng"):
                 results.append(future.result())
         
         return results

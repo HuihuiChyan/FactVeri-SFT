@@ -12,6 +12,7 @@ class SearchAPILocal:
             return []
         payload = {"queries": queries, "topk": 3, "return_scores": True}
         try:
+            print(f"Searching from Local Documents for {len(queries)} Queries.")
             response = requests.post(
                 self.search_url, json=payload, timeout=2000
             )

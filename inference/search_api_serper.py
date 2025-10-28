@@ -10,15 +10,17 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class SearchAPISerper:
-    def __init__(self, search_url="https://google.serper.dev/search"):
+    def __init__(self, search_url="https://google.serper.dev/search", use_cache=True):
         # invariant variables
         self.serper_key = os.getenv("SERPER_KEY_PRIVATE")
         self.url = search_url
         self.headers = {'X-API-KEY': self.serper_key,
                         'Content-Type': 'application/json'}
         # cache related
-        self.cache_file = "cache/search_cache_serper.json"
-        self.cache_dict = self.load_cache()
+        self.use_cache = use_cache
+        if self.use_cache:
+            self.cache_file = "cache/search_cache_serper.json"
+            self.cache_dict = self.load_cache()
         
         # 线程安全机制
         self.cache_lock = threading.RLock()  # 使用可重入锁
@@ -53,15 +55,16 @@ class SearchAPISerper:
         以线程安全的方式实现缓存。
         """
         query = query.strip().strip("\'").strip('\"')
-        cache_key = query.strip()
 
-        # --- 首先，以线程安全的方式检查缓存 ---
-        with self.cache_lock:
-            if cache_key in self.cache_dict:
-                print("Loading cache from cache file!")
-                cached_result = self.cache_dict[cache_key]
-                # Return formatted results from cache
-                return self.format_search_results(cached_result)
+        if self.use_cache:
+            cache_key = query.strip()
+            # --- 首先，以线程安全的方式检查缓存 ---
+            with self.cache_lock:
+                if cache_key in self.cache_dict:
+                    print("Loading cache from cache file!")
+                    cached_result = self.cache_dict[cache_key]
+                    # Return formatted results from cache
+                    return self.format_search_results(cached_result)
 
         # --- 如果不在缓存中，就在锁之外执行网络请求 ---
         # 这允许其他线程并发执行它们自己的请求。
@@ -82,18 +85,19 @@ class SearchAPISerper:
         # --- 查询成功后，在锁下更新并保存缓存 ---
         # 仅当最终结果有内容时才进行缓存
         if not raw_result.get("organic"):
-            print(f"No results found for query: {query}.")
+            print(f"\nNo results found for query: {query}.")
             return "No results found."
         elif not raw_result:
-            print(f"Search result is None!")
+            print(f"\nSearch result is None!")
             return "No results found."
         else:
-            with self.cache_lock:
-                self.cache_dict[cache_key] = raw_result
-                self.add_n += 1
-                if self.add_n % self.save_interval == 0:
-                    # 这个调用是安全的，因为我们使用的是RLock
-                    self.save_cache()
+            if self.use_cache:
+                with self.cache_lock:
+                    self.cache_dict[cache_key] = raw_result
+                    self.add_n += 1
+                    if self.add_n % self.save_interval == 0:
+                        # 这个调用是安全的，因为我们使用的是RLock
+                        self.save_cache()
             # Return formatted results as string
             return self.format_search_results(raw_result)
 
@@ -102,7 +106,7 @@ class SearchAPISerper:
         以线程安全的方式将当前缓存字典保存到文件中。
         """
         with self.cache_lock:
-            print(f"Saving serper search cache...")
+            print(f"\nSaving serper search cache...")
             # 写入前确保目录存在
             os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
 
@@ -141,7 +145,7 @@ class SearchAPISerper:
         with ThreadPoolExecutor(max_workers=10) as executor:
             # Submit all tasks to the executor and wrap with tqdm for a progress bar
             futures = [executor.submit(self.get_search_res, query) for query in queries]
-            for future in tqdm.tqdm(futures, desc="Searching"):
+            for future in tqdm.tqdm(futures, desc="Searching from Google"):
                 results.append(future.result())
 
         return results

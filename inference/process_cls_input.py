@@ -161,19 +161,22 @@ def main():
                 create_prompt_for_cls(line, answer, args.cls_input, tokenizer)
                 for answer in line["answers"]
             ]
-            
-            # 根据 verify_result 构建正负样本对
-            verify_result = line.get("verify_result")
-            if verify_result == 0:
-                positive_trace = all_prompts[0]
-                negative_trace = all_prompts[1]
-            elif verify_result == 1:
-                positive_trace = all_prompts[1]
-                negative_trace = all_prompts[0]
+            if "verify_result" in line.keys():
+                # 根据 verify_result 构建正负样本对
+                verify_result = line.get("verify_result")
+                if verify_result == 0:
+                    positive_trace = all_prompts[0]
+                    negative_trace = all_prompts[1]
+                elif verify_result == 1:
+                    positive_trace = all_prompts[1]
+                    negative_trace = all_prompts[0]
+                else:
+                    # 如果 verify_result 无效，则跳过该行
+                    print(f"Skipping line with invalid 'verify_result': {verify_result}")
+                    continue
             else:
-                # 如果 verify_result 无效，则跳过该行
-                print(f"Skipping line with invalid 'verify_result': {verify_result}")
-                continue
+                    positive_trace = all_prompts[0]
+                    negative_trace = all_prompts[1]                
             
             # 准备输出的新行
             # 确保 'reference' 字段是列表格式

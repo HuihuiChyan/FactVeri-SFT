@@ -59,6 +59,9 @@ def parse_args():
     parser.add_argument(
         "--temperature", type=float, default=0.0, help="Sampling temperature for generation."
     )
+    parser.add_argument(
+        "--disable_cache_for_serper", action="store_true", default=False,
+    )
     return parser.parse_args()
 
 
@@ -99,7 +102,7 @@ def extract_final_ranking(model_generated_output: str) -> List[int]:
     if not matches: return []
     try:
         parts = [part.strip() for part in matches[-1].strip().split('>')]
-        return [int(re.search(r'Answer(\d+)', part, re.IGNORECASE).group(1)) - 1 for part in parts if re.search(r'Answer(\d+)', part, re.IGNORECASE)]
+        return [int(re.search(r'Answer(\d+)', part, re.IGNORECASE).group(1)) for part in parts if re.search(r'Answer(\d+)', part, re.IGNORECASE)]
     except (ValueError, IndexError, AttributeError):
         return []
 
@@ -355,7 +358,7 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
     if args.mode == "retrieval":
         print("Initializing search APIs: Local (Wiki) and Searxng (Google)...")
         local_api = SearchAPILocal()
-        searxng_api = SearchAPISearxng()
+        searxng_api = SearchAPISearxng(use_cache=(not args.disable_cache_for_serper))
 
         for turn in tqdm.tqdm(range(MAX_TURNS), desc="Agent Turns"):
             # Stage 1: DECIDE - Decide next action for jobs in 'decision' state

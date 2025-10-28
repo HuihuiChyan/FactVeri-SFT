@@ -125,8 +125,7 @@ document/
 
 corpora/hotpotqa/hotpotqa_train/
 
-nq_hotpot_train_head/
-nq_hotpot_train/
+nq_hotpotqa_train/
 
 *evaluation.jsonl
 *filtering.jsonl
@@ -143,3 +142,4 @@ cache/
 corpora/hotpotqa/*.json
 corpora/nq_test/*.json
 corpora/triviaqa/*.json
+corpora/musique/*.json
