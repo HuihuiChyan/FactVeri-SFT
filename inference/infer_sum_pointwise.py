@@ -3,6 +3,7 @@ import json
 import re
 import os
 import tqdm
+import sklearn
 from typing import List, Dict
 
 # Import sglang libraries
@@ -80,62 +81,96 @@ def batched_sglang_generation(input_ids, sampling_params, engine, batch_size=100
     batched_input_ids = [input_ids[i:i + batch_size] for i in range(0, len(input_ids), batch_size)]
     results = []
     for batch in tqdm.tqdm(batched_input_ids, desc="Generating Verdicts"):
-        results.extend(engine.generate(input_ids=batch, sampling_params=sampling_params))
+        batched_results = engine.generate(input_ids=batch, sampling_params=sampling_params)
+        results.extend(batched_results)
+            
     return results
 
 def evaluate_final_results_pointwise(results: List[Dict]):
-    """Calculates and prints binary classification metrics for the pointwise scheme."""
-    tp, tn, fp, fn, total_answers, invalid_predictions = 0, 0, 0, 0, 0, 0
+    """
+    根据新的多分类规则（合并intermediate/irrelevant）计算和打印评估指标。
     
+    规则:
+    1. 将 "irrelevant" 和 "intermediate" 标签合并为 "intermediate" 类。
+    2. 计算 "correct", "intermediate", "incorrect" 这三个类别的 Acc 和 F1。
+    3. 将空字符串或其他意外标签视为 "incorrect"。
+    """
+    
+    ground_truths = []
+    predictions = []
+    total_answers = 0
+    invalid_predictions = 0
+    
+    # 定义标签列表，用于 sklearn 报告
+    class_labels = ["correct", "intermediate", "incorrect"]
+
+    def normalize_label(label: str) -> str:
+        """根据规则合并标签"""
+        label = label.lower()
+        if label in ["intermediate", "irrelevant"]:
+            return "intermediate"
+        elif label in ["correct", "incorrect"]:
+            return label
+        else:
+            # 将空字符串或其他意外值视为 "incorrect"
+            return "incorrect"
+
     for item in results:
         for answer in item.get("answers", []):
             total_answers += 1
-            gt = answer.get("verify_result", "").lower()
-            fv = answer.get("final_verdict", "").lower()
             
-            if fv == "invalid": 
+            # 1. 提取 Ground Truth (gt)，并处理拼写错误
+            if "verify_result" in answer.keys():
+                gt_raw = answer.get("verify_result", "")
+            else:
+                gt_raw = answer.get("verfy_result", "")  # 处理可能的拼写错误
+            
+            # 2. 提取 Final Verdict (fv)
+            fv_raw = answer.get("final_verdict", "")
+            
+            # 3. 跳过 "invalid" 的预测
+            if fv_raw.lower() == "invalid": 
                 invalid_predictions += 1
                 continue
                 
-            # Normalize ground truth and prediction
-            gt_pos = gt in ["correct", "intermediate", "irrelevant"]
-            pred_pos = fv in ["correct", "intermediate", "irrelevant"]
+            # 4. 规范化标签并添加到列表中
+            gt_norm = normalize_label(gt_raw)
+            fv_norm = normalize_label(fv_raw)
             
-            if gt_pos and pred_pos: 
-                tp += 1
-            elif not gt_pos and not pred_pos: 
-                tn += 1
-            elif not gt_pos and pred_pos: 
-                fp += 1
-            elif gt_pos and not pred_pos: 
-                fn += 1
+            ground_truths.append(gt_norm)
+            predictions.append(fv_norm)
     
-    # Calculate metrics
-    accuracy = (tp + tn) / total_answers if total_answers > 0 else 0
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    # --- 计算指标 ---
+    total_valid = len(ground_truths)
+    
+    if total_valid == 0:
+        # 处理没有有效答案的情况
+        accuracy = 0.0
+        f1_macro = 0.0
+        
+    # 1. 计算 Accuracy
+    # 这完全符合你的要求：(gt==fv) 或 (gt,fv 都在 {intermediate, irrelevant})
+    accuracy = sklearn.metrics.accuracy_score(ground_truths, predictions)
+    
+    # 2. 计算 F1-Score (Macro 和 Weighted)
+    f1_macro = sklearn.metrics.f1_score(ground_truths, predictions, average='macro', labels=class_labels, zero_division=0)
     invalid_ratio = invalid_predictions / total_answers if total_answers > 0 else 0
     
     metrics = {
         "accuracy": round(accuracy, 4),
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-        "invalid_ratio": round(invalid_ratio, 4),
+        "f1_macro": round(f1_macro, 4),
         "total_answers": total_answers,
-        "tp": tp, "tn": tn, "fp": fp, "fn": fn
+        "invalid_answers": invalid_predictions,
+        "invalid_ratio": round(invalid_ratio, 4),
     }
     
-    print("\n--- Pointwise Evaluation Results ---")
-    print(f"Total Answers: {total_answers}")
+    # --- 打印结果 ---
+    print("\n--- Pointwise Evaluation Results ------------")
     print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"Invalid Predictions Ratio: {invalid_ratio:.4f}")
-    print(f"Confusion Matrix - TP: {tp}, TN: {tn}, FP: {fp}, FN: {fn}")
-    print("------------------------------------")
+    print(f"F1 Score (Macro): {f1_macro:.4f}")
+    print(f"Total Answers: {total_answers}")
+    print(f"Invalid Answers: {invalid_predictions} ({invalid_ratio:.4f})")
+    print("-----------------------------------------------")
     
     return metrics
 
@@ -197,7 +232,7 @@ def process_pointwise_factuality_judgment(args):
     # Load input data
     print(f"Loading data from {args.input_file}...")
     with open(args.input_file, "r", encoding="utf-8") as f:
-        input_data = [json.loads(line) for line in f if line.strip()]
+        input_data = [json.loads(line) for line in f if line.strip()][:10]
     
     print(f"Loaded {len(input_data)} items from input file.")
     
@@ -263,9 +298,8 @@ Based on your analysis, provide a structured response in the following format. D
     # Generate verdicts in batches
     sampling_params = {
         "max_new_tokens": args.max_token, 
-        "temperature": args.temperature
+        "temperature": args.temperature,
     }
-    
     verdict_responses = batched_sglang_generation(
         input_ids=pointwise_input_ids, 
         sampling_params=sampling_params, 
@@ -283,12 +317,13 @@ Based on your analysis, provide a structured response in the following format. D
         # Extract structured data and add to the answer object
         extracted_data = extract_structured_response(generated_text)
         
-        input_data[item_index]["answers"][answer_index].update({
+        verdict = {
             "verdict_response": generated_text,
             "useful_facts": extracted_data["useful_facts"],
             "reasoning": extracted_data["reasoning"],
             "final_verdict": extracted_data["final_verdict"],
-        })
+        }
+        input_data[item_index]["answers"][answer_index].update(verdict)
     
     # Save results with verdicts
     print(f"Saving results to {args.output_file}...")
@@ -301,38 +336,14 @@ Based on your analysis, provide a structured response in the following format. D
     # Evaluate the results
     print("Evaluating results...")
     evaluation_metrics = evaluate_final_results_pointwise(input_data)
-    
-    # Verify judgment correctness
-    verification_results = verify_judgment_correctness(input_data)
-    
-    # Print summary
-    print(f"\n--- Summary ---")
-    print(f"Input file: {os.path.basename(args.input_file)}")
-    print(f"Output file: {os.path.basename(args.output_file)}")
-    print(f"Model: {os.path.basename(args.model_path)}")
-    print(f"Total items processed: {len(input_data)}")
-    print(f"Total answers processed: {evaluation_metrics.get('total_answers', 0)}")
-    print(f"Overall F1 Score: {evaluation_metrics.get('f1', 0):.4f}")
-    print(f"Judgment Accuracy: {verification_results.get('judgment_accuracy', 0):.4f}")
-    print("---------------")
-    
+
     return {
         "evaluation_metrics": evaluation_metrics,
-        "verification_results": verification_results,
         "processed_data": input_data
     }
 
-def main():
-    """Main execution function."""
+if __name__ == "__main__":
     args = parse_args()
     
-    try:
-        results = process_pointwise_factuality_judgment(args)
-        print("Processing completed successfully!")
-        return results
-    except Exception as e:
-        print(f"Error during processing: {str(e)}")
-        raise
-
-if __name__ == "__main__":
-    main()
+    results = process_pointwise_factuality_judgment(args)
+    print("Processing completed successfully!")

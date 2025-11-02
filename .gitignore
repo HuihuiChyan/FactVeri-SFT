@@ -139,7 +139,16 @@ results/
 
 cache/
 
-corpora/hotpotqa/*.json
-corpora/nq_test/*.json
-corpora/triviaqa/*.json
-corpora/musique/*.json
+corpora/2wiki_new/*.json
+corpora/hotpotqa_new/*.json
+corpora/musique_new/*.json
+corpora/nq_test_new/*.json
+corpora/popqa_new/*.json
+corpora/triviaqa_new/*.json
+
+corpora/2wiki_new/2wiki
+corpora/hotpotqa_new/hotpotqa
+corpora/musique_new/musique
+corpora/nq_test_new/nq_test
+corpora/popqa_new/popqa
+corpora/triviaqa_new/triviaqa
