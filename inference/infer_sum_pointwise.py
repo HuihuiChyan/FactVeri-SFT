@@ -232,7 +232,7 @@ def process_pointwise_factuality_judgment(args):
     # Load input data
     print(f"Loading data from {args.input_file}...")
     with open(args.input_file, "r", encoding="utf-8") as f:
-        input_data = [json.loads(line) for line in f if line.strip()][:10]
+        input_data = [json.loads(line) for line in f if line.strip()]
     
     print(f"Loaded {len(input_data)} items from input file.")
     

@@ -46,8 +46,8 @@ def parse_args():
         help="Set operating mode: 'retrieval' (search-based) or 'direct_gen' (direct generation)."
     )
     parser.add_argument(
-        "--scheme", type=str, default="ranking", choices=["ranking", "pointwise"],
-        help="Evaluation scheme: 'ranking' (rank a list of answers) or 'pointwise' (judge correctness of each answer)."
+        "--scheme", type=str, default="ranking", choices=["ranking", "scoring"],
+        help="Evaluation scheme: 'ranking' (rank a list of answers) or 'scoring' (judge correctness of each answer)."
     )
     parser.add_argument(
         "--disable_thinking", action="store_true", default=False,
@@ -80,18 +80,18 @@ SEARCH_TOOL_DEFINITION = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": "Performs a web search using Google. Use this for recent events, current affairs, opinions, or information not found in the local database.",
-            "parameters": {
-                "type": "object",
-                "properties": { "query": { "type": "string", "description": "The search query keyword for the web search engine." } },
-                "required": ["query"],
-            },
-        },
-    }
+    # {
+    #     "type": "function",
+    #     "function": {
+    #         "name": "search_web",
+    #         "description": "Performs a web search using Google. Use this for recent events, current affairs, opinions, or information not found in the local database.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": { "query": { "type": "string", "description": "The search query keyword for the web search engine." } },
+    #             "required": ["query"],
+    #         },
+    #     },
+    # }
 ]
 
 # --- Helper Functions (Extraction & Evaluation) ---
@@ -105,6 +105,19 @@ def extract_final_ranking(model_generated_output: str) -> List[int]:
         return [int(re.search(r'Answer(\d+)', part, re.IGNORECASE).group(1)) for part in parts if re.search(r'Answer(\d+)', part, re.IGNORECASE)]
     except (ValueError, IndexError, AttributeError):
         return []
+
+def extract_final_scoring(model_generated_output: str) -> int:
+    """Extracts the final score from the model's output."""
+    if not isinstance(model_generated_output, str): return 0
+    match = re.search(r"<verdict>\s*(\d+)\s*</verdict>", model_generated_output, re.IGNORECASE)
+    if not match:
+        match = re.search(r"\*\*Final Verdict\*\*:\s*(\d+)\s*", model_generated_output, re.IGNORECASE)
+    if not match:
+        match = re.search(r"Final Verdict:\s*(\d+)\s*", model_generated_output, re.IGNORECASE)
+    try:
+        return int(match.group(1))
+    except:            
+        return 0
 
 def check_ready_for_evaluation(model_generated_output: str) -> bool:
     """Checks if the model is ready to move to the final evaluation stage."""
@@ -244,6 +257,7 @@ def process_tool_execution_stage(jobs_with_calls, local_api, searxng_api):
             task["job"]["search_count"] += 1
 
     if web_tasks:
+        raise Exception("Check your code!")
         results = searxng_api.search_api_call([t["query"] for t in web_tasks])
         for task, result in zip(web_tasks, results):
             content = f"[Source: Google Search]\n{result}"
@@ -257,7 +271,7 @@ def process_tool_execution_stage(jobs_with_calls, local_api, searxng_api):
             del job["tool_calls"]
 
 
-def process_evaluation_stage(evaluate_jobs, engine, tokenizer, args):
+def process_evaluation_stage_ranking(evaluate_jobs, engine, tokenizer, args):
     """Processes jobs ready for final evaluation and verdict."""
     if not evaluate_jobs: return
     
@@ -265,42 +279,82 @@ def process_evaluation_stage(evaluate_jobs, engine, tokenizer, args):
 
     sampling_params = {"max_new_tokens": args.max_token, "temperature": args.temperature}
 
-    if args.scheme == "ranking":
-        ranking_verdict_prompt_retrieval = """Based on the preceding conversation, your task is to rank all the given answers from most to least factually correct.
+    assert args.scheme == "ranking"
+    ranking_verdict_prompt_retrieval = """Based on the preceding conversation, your task is to rank all the given answers from most to least factually correct.
 
 Question: {question}
 {answers_block}
 
 Please first provide your explanation, and then state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX > AnswerY > AnswerZ </verdict>'. Example: '**Final Verdict**: <verdict> Answer3 > Answer1 > Answer2 </verdict>'."""
 
-        ranking_verdict_prompt_direct = """You are an expert fact-checking assistant. Your task is to rank all the given answers from most to least factually correct based on your internal knowledge.
+    ranking_verdict_prompt_direct = """You are an expert fact-checking assistant. Your task is to rank all the given answers from most to least factually correct based on your internal knowledge.
 
 Question: {question}
 {answers_block}
 
 Please first provide your explanation, and then state your final verdict in the format: '**Final Verdict**: <verdict> AnswerX > AnswerY > AnswerZ </verdict>'. Example: '**Final Verdict**: <verdict> Answer3 > Answer1 > Answer2 </verdict>'."""
 
-        verdict_input_ids = []
-        for job in evaluate_jobs:
-            answers = job["original_item"]["answers"]
-            answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(answers)])
-            
+    verdict_input_ids = []
+    for job in evaluate_jobs:
+        answers = job["original_item"]["answers"]
+        answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(answers)])
+        
+        if args.mode == "retrieval":
+            prompt = ranking_verdict_prompt_retrieval.format(question=job["original_item"]["question"], answers_block=answers_block)
+            final_messages = job["messages"] + [{"role": "user", "content": prompt}]
+        else: # direct_gen mode
+            prompt = ranking_verdict_prompt_direct.format(question=job["original_item"]["question"], answers_block=answers_block)
+            final_messages = [{"role": "user", "content": prompt}]
+        
+        verdict_input_ids.append(tokenizer.apply_chat_template(
+            conversation=final_messages, tokenize=True, add_generation_prompt=True, enable_thinking=(not args.disable_thinking)))
+    
+    verdict_responses = batched_sglang_generation(input_ids=verdict_input_ids, sampling_params=sampling_params, engine=engine)
+    
+    for job, response in zip(evaluate_jobs, verdict_responses):
+        generated_text = response["text"]
+        job["verdict_response"] = generated_text
+        job["predicted_ranking"] = extract_final_ranking(generated_text)
+
+def process_evaluation_stage_scoring(evaluate_jobs, engine, tokenizer, args):
+    """Processes jobs ready for final evaluation and verdict."""
+    if not evaluate_jobs: return
+    
+    print(f"--- Starting final evaluation for {len(evaluate_jobs)} jobs ---")
+
+    sampling_params = {"max_new_tokens": args.max_token, "temperature": args.temperature}
+
+    assert args.scheme == "scoring"
+    scoring_verdict_prompt_retrieval = """Based on the preceding conversation, your task is to score the factuality of the given answer from a scale of 1-10.
+
+Question: {question}
+Answer: {answer}
+
+Please first provide your explanation, and then state your final verdict in the format: '**Final Verdict**: <verdict> a score between 1-10 </verdict>'. Example: '**Final Verdict**: <verdict> 3 </verdict>'."""
+
+    verdict_input_ids = []
+    original_job_ids = []
+    original_ans_ids = []
+    for i, job in enumerate(evaluate_jobs):
+        answers = job["original_item"]["answers"]
+        for j, answer in enumerate(answers):
             if args.mode == "retrieval":
-                prompt = ranking_verdict_prompt_retrieval.format(question=job["original_item"]["question"], answers_block=answers_block)
+                prompt = scoring_verdict_prompt_retrieval.format(question=job["original_item"]["question"], answer=answer["answer"])
                 final_messages = job["messages"] + [{"role": "user", "content": prompt}]
             else: # direct_gen mode
-                prompt = ranking_verdict_prompt_direct.format(question=job["original_item"]["question"], answers_block=answers_block)
-                final_messages = [{"role": "user", "content": prompt}]
+                raise Exception("Not supported yet!")
             
             verdict_input_ids.append(tokenizer.apply_chat_template(
                 conversation=final_messages, tokenize=True, add_generation_prompt=True, enable_thinking=(not args.disable_thinking)))
-        
-        verdict_responses = batched_sglang_generation(input_ids=verdict_input_ids, sampling_params=sampling_params, engine=engine)
-        
-        for job, response in zip(evaluate_jobs, verdict_responses):
-            generated_text = response["text"]
-            job["verdict_response"] = generated_text
-            job["predicted_ranking"] = extract_final_ranking(generated_text)
+            original_job_ids.append(i)
+            original_ans_ids.append(j)
+    
+    verdict_responses = batched_sglang_generation(input_ids=verdict_input_ids, sampling_params=sampling_params, engine=engine)
+    
+    for job_id, ans_id, response in zip(original_job_ids, original_ans_ids, verdict_responses):
+        generated_text = response["text"]
+        evaluate_jobs[job_id]["original_item"]["answers"][ans_id]["verdict_response"] = generated_text
+        evaluate_jobs[job_id]["original_item"]["answers"][ans_id]["predicted_scoring"] = extract_final_scoring(generated_text)
 
 # --- Main Function ---
 def main():
@@ -309,8 +363,8 @@ def main():
     MAX_TURNS = 5
 
     # --- Initialization ---
-    if args.scheme == "pointwise" and args.mode == "direct_gen":
-        print("Error: 'pointwise' scheme does not support 'direct_gen' mode.")
+    if args.scheme == "scoring" and args.mode == "direct_gen":
+        print("Error: 'scoring' scheme does not support 'direct_gen' mode.")
         exit(1)
 
     print(f"Arguments: {args}")
@@ -332,11 +386,17 @@ Question: {{question}}
 
 Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and generate one search query per turn. If you have enough information, respond with "READY_FOR_EVALUATION"."""
 
-    pointwise_search_prompt = f"""Your task is to gather information to verify an answer to a question. Based on the question, think and identify what information you need and generate search queries using the available tools.
+#     scoring_search_prompt = f"""Your task is to gather information to verify an answer to a question. Based on the question, think and identify what information you need and generate search queries using the available tools.
+
+# Question: {{question}}
+
+# Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and generate one search query per turn. If you have enough information, respond with "READY_FOR_ANSWERING"."""
+
+    scoring_search_prompt = f"""Your task is to gather information to verify an answer to a question. Based on the question, think and identify what information you need and generate search queries using the available tools.
 
 Question: {{question}}
 
-Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and generate one search query per turn. If you have enough information, respond with "READY_FOR_ANSWERING"."""
+Leverage `search_local` for searching in Wikipedia and generate one search query per turn. If you have enough information, respond with "READY_FOR_ANSWERING"."""
 
     # --- Job Initialization ---
     jobs = []
@@ -346,8 +406,8 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
             jobs.append({**job_base, "current_step": "evaluate"})
             continue
 
-        if args.scheme == "pointwise":
-            content = pointwise_search_prompt.format(question=item["question"])
+        if args.scheme == "scoring":
+            content = scoring_search_prompt.format(question=item["question"])
         else: # ranking
             answers_block = "\n".join([f"Answer{i+1}: {ans['answer']}" for i, ans in enumerate(item.get("answers", []))])
             content = ranking_search_prompt.format(question=item["question"], answers_block=answers_block)
@@ -385,17 +445,20 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
     if args.scheme == "ranking":
         print("--- Starting Final Evaluation Stage for Ranking ---")
         evaluation_jobs = [j for j in jobs if j.get("current_step") == "evaluate"]
-        process_evaluation_stage(evaluation_jobs, engine, tokenizer, args)
+        process_evaluation_stage_ranking(evaluation_jobs, engine, tokenizer, args)
         print("--- Final Evaluation Finished ---")
-    
-    # For pointwise, we skip the verdict step and proceed directly to saving.
+    elif args.scheme == "scoring":
+        print("--- Starting Final Evaluation Stage for Scoring ---")
+        evaluation_jobs = [j for j in jobs if j.get("current_step") == "evaluate"]
+        process_evaluation_stage_scoring(evaluation_jobs, engine, tokenizer, args)
+        print("--- Final Evaluation Finished ---")        
 
     print("All sequences processed. Saving results...")
     final_results = []
     output_path = args.output_file
 
     # Prepare the final results list based on the scheme
-    if args.scheme == "pointwise":
+    if args.scheme == "scoring":
         for job in sorted(jobs, key=lambda x: x["id"]):
             result_item = job["original_item"]
             result_item["retrieval_path"] = job.get("messages", [])
@@ -421,8 +484,8 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
     # Perform final evaluation if applicable for the scheme
     if args.scheme == "ranking":
         evaluate_final_results_ranking(final_results)
-    else: # pointwise
-        print("Pointwise mode finished. Verdict step was skipped, so no evaluation metrics are calculated.")
+    else: # scoring
+        print("scoring mode finished. Verdict step was skipped, so no evaluation metrics are calculated.")
 
     # Print final summary
     print(f"\nSummary:\nDataset: {os.path.basename(args.input_file)}\n"
