@@ -152,3 +152,12 @@ corpora/musique_new/musique
 corpora/nq_test_new/nq_test
 corpora/popqa_new/popqa
 corpora/triviaqa_new/triviaqa
+corpora/factscore_veri/*.json
+
+corpora/nq_test_gen/*.json
+corpora/bamboogle_gen/*.json
+corpora/musique_gen/*.json
+
+ablation/*.png
+corpora/*.jsonl
+corpora/*.png
