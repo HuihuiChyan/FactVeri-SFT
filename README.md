@@ -15,7 +15,7 @@ Large Language Models (LLMs) often generate factually incorrect content, a pheno
 
 ## 🛠️ Framework Architecture
 
-DiVA operates through a specialized three-stage pipeline[cite: 30, 65]:
+DiVA operates through a specialized three-stage pipeline:
 
 1.  **Agentic Search**: A generative module utilizes reasoning and tool-use capabilities to autonomously retrieve external knowledge from sources like Google Search and Wikipedia. It follows a loop of Thought, Action, and Observation.
 2.  **Context Compression**: The retrieved search trajectory is condensed to filter out irrelevant information while preserving key facts and reasoning steps.
@@ -91,4 +91,4 @@ If you find this research or codebase helpful, please cite our work:
 
 ## 🙏 Acknowledgments
 
-This work was supported by JST K Program Grant Number JPMJKP24C3, Japan, and the National Natural Science Foundation of China (62276077)[cite: 367].
+This work was supported by JST K Program Grant Number JPMJKP24C3, Japan, and the National Natural Science Foundation of China (62276077).
