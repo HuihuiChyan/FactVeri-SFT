@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=3
 
-export SERPER_KEY_PRIVATE=95cc94f4818a2ffbc6b80a3c935d5729a24a087f
+export SERPER_KEY_PRIVATE="put-your-key-here"
 
 model_path=/workspace/HFModels/
 model_name=Qwen3-4B-Instruct-2507
