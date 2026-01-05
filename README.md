@@ -1,7 +1,7 @@
 # DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier
 
-This repository contains the official implementation and datasets for the paper:  
-> **"DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier"** (ACL 2026 Submission).
+This repository contains the official implementation and datasets for the anonymous paper:  
+> **"DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier"** (ACL 2026 Anonymous Submission).
 
 ---
 
@@ -71,21 +71,6 @@ Run the evaluation for competing generative and discriminative architectures:
 * `bash scripts/infer_generative_scoring.sh`: Performs scoring based standard generative verifiers.
 * `bash scripts/run_factscore.sh`: Executes the FactScore baseline for atomic claim verification.
 * `bash scripts/run_minicheck.sh`: Executes the MiniCheck baseline for grounding-based fact-checking.
-
----
-
-## 📜 Citation
-
-If you find this research or codebase helpful, please cite our work:
-
-```bibtex
-@article{huang2026diva,
-  title={DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier},
-  author={Huang, Hui and Yang, Muyun and Arase, Yuki},
-  journal={ACL 2026 Submission},
-  year={2026}
-}
-```
 
 ---
 
