@@ -1,7 +1,7 @@
 # DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier
 
 This repository contains the official implementation and datasets for the anonymous paper:  
-> **"DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier"** (ACL 2026 Anonymous Submission).
+> **"DiVA: Fine-grained Factuality Verification with Agentic-Discriminative Verifier"** (ARR 2026 January Anonymous Submission).
 
 ---
 
