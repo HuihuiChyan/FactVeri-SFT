@@ -35,6 +35,7 @@ DiVA operates through a specialized three-stage pipeline:
 ├── train/                  # Discriminative training logic and margin loss
 ├── requirements.txt        # Project dependencies
 └── README.md
+```
 
 ## 💡 Methodology Highlights
 
@@ -71,9 +72,3 @@ Run the evaluation for competing generative and discriminative architectures:
 * `bash scripts/infer_generative_scoring.sh`: Performs scoring based standard generative verifiers.
 * `bash scripts/run_factscore.sh`: Executes the FactScore baseline for atomic claim verification.
 * `bash scripts/run_minicheck.sh`: Executes the MiniCheck baseline for grounding-based fact-checking.
-
----
-
-## 🙏 Acknowledgments
-
-This work was supported by JST K Program Grant Number JPMJKP24C3, Japan, and the National Natural Science Foundation of China (62276077).
