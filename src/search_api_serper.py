@@ -1,10 +1,10 @@
 import json
 import os
 import re
+import sys
 import time
 import threading
 import requests
-import tqdm
 from ast import literal_eval
 from concurrent.futures import ThreadPoolExecutor
 
@@ -143,9 +143,9 @@ class SearchAPISerper:
 
         results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
-            # Submit all tasks to the executor and wrap with tqdm for a progress bar
+            # Submit all tasks to the executor
             futures = [executor.submit(self.get_search_res, query) for query in queries]
-            for future in tqdm.tqdm(futures, desc="Searching from Google"):
+            for future in futures:
                 results.append(future.result())
 
         return results

@@ -2,9 +2,10 @@ import argparse
 import json
 import re
 import os
+import time
 import tqdm
 import sklearn
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 # Import sglang libraries
 import sglang as sgl
@@ -76,15 +77,17 @@ def extract_structured_response(model_generated_output: str) -> Dict[str, str]:
 
     return {"useful_facts": facts, "reasoning": reasoning, "final_verdict": final_verdict}
 
-def batched_sglang_generation(input_ids, sampling_params, engine, batch_size=100):
-    """Generates text in batches using the SGLang engine."""
+def batched_sglang_generation(input_ids, sampling_params, engine, batch_size=100) -> Tuple[List, List[float]]:
+    """Generates text in batches using the SGLang engine. Returns (results, batch_times) where batch_times[i] is elapsed seconds for batch i."""
     batched_input_ids = [input_ids[i:i + batch_size] for i in range(0, len(input_ids), batch_size)]
     results = []
+    batch_times = []
     for batch in tqdm.tqdm(batched_input_ids, desc="Generating Verdicts"):
+        t0 = time.perf_counter()
         batched_results = engine.generate(input_ids=batch, sampling_params=sampling_params)
+        batch_times.append(time.perf_counter() - t0)
         results.extend(batched_results)
-            
-    return results
+    return results, batch_times
 
 def evaluate_final_results_pointwise(results: List[Dict]):
     """
@@ -300,12 +303,24 @@ Based on your analysis, provide a structured response in the following format. D
         "max_new_tokens": args.max_token, 
         "temperature": args.temperature,
     }
-    verdict_responses = batched_sglang_generation(
+    verdict_responses, batch_times = batched_sglang_generation(
         input_ids=pointwise_input_ids, 
         sampling_params=sampling_params, 
         engine=engine,
         batch_size=args.batch_size
     )
+    
+    # Build per-response time: response i belongs to batch batch_idx and has index in_batch_idx
+    batch_size_actual = args.batch_size
+    per_response_times = []
+    for i in range(len(verdict_responses)):
+        batch_idx = i // batch_size_actual
+        in_batch_idx = i % batch_size_actual
+        if batch_idx >= len(batch_times):
+            per_response_times.append(0.0)
+        else:
+            batch_len = min(batch_size_actual, len(pointwise_input_ids) - batch_idx * batch_size_actual)
+            per_response_times.append(batch_times[batch_idx] / batch_len if batch_len else 0.0)
     
     # Process responses and add verdicts to the data
     print("Processing verdict responses...")
@@ -313,6 +328,10 @@ Based on your analysis, provide a structured response in the following format. D
         mapping = response_map[i]
         item_index, answer_index = mapping["item_index"], mapping["answer_index"]
         generated_text = response["text"]
+        
+        # Token counts: input from prompt, output from generated text
+        input_tokens = len(pointwise_input_ids[i]) if i < len(pointwise_input_ids) else 0
+        output_tokens = len(tokenizer.encode(generated_text, add_special_tokens=False))
         
         # Extract structured data and add to the answer object
         extracted_data = extract_structured_response(generated_text)
@@ -322,6 +341,10 @@ Based on your analysis, provide a structured response in the following format. D
             "useful_facts": extracted_data["useful_facts"],
             "reasoning": extracted_data["reasoning"],
             "final_verdict": extracted_data["final_verdict"],
+            "infer_sum_pointwise_time_seconds": round(per_response_times[i], 4),
+            "infer_sum_pointwise_input_tokens": input_tokens,
+            "infer_sum_pointwise_output_tokens": output_tokens,
+            "infer_sum_pointwise_total_tokens": input_tokens + output_tokens,
         }
         input_data[item_index]["answers"][answer_index].update(verdict)
     

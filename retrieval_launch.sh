@@ -1,14 +1,16 @@
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=2,3
 
 file_path=./document
 index_file=$file_path/e5_Flat.index
 corpus_file=$file_path/wiki-18.jsonl
 retriever_name=e5
-retriever_path=intfloat/e5-base-v2
+retriever_path=/root/autodl-tmp/HFModels/e5-base-v2
+port=${1:-8000}
 
 python -u search_r1/search/retrieval_server.py --index_path $index_file \
                                                --corpus_path $corpus_file \
                                                --topk 3 \
                                                --retriever_name $retriever_name \
                                                --retriever_model $retriever_path \
+                                               --port $port \
                                                --faiss_gpu

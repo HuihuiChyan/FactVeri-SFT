@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import requests
+import time
 from typing import List, Dict
 import os
 import asyncio
@@ -61,6 +62,10 @@ def parse_args():
     )
     parser.add_argument(
         "--disable_cache_for_serper", action="store_true", default=False,
+    )
+    parser.add_argument(
+        "--no-use-serper-cache", action="store_true", default=False,
+        help="Disable serper cache. When set, will not read from cache and always perform search. Default is to use cache."
     )
     return parser.parse_args()
 
@@ -241,6 +246,10 @@ def process_decision_stage(jobs_to_decide, engine, tokenizer, parser, args):
         ) for job in jobs_to_decide
     ]
 
+    t0 = time.perf_counter()
+    for j in jobs_to_decide:
+        j.setdefault("e2e_start_time", t0)
+
     sampling_params = {"max_new_tokens": args.max_token, "temperature": args.temperature}
     responses = batched_sglang_generation(input_ids, sampling_params, engine)
     
@@ -259,8 +268,8 @@ def process_decision_stage(jobs_to_decide, engine, tokenizer, parser, args):
         except (json.JSONDecodeError, ValueError):
             job["current_step"] = "evaluate" # Fallback to evaluation on parsing failure
 
-def process_tool_execution_stage(jobs_with_calls, local_api, searxng_api):
-    """Executes the tool calls, adds result to history, and sets state to decision."""
+def process_tool_execution_stage(jobs_with_calls, local_api, searxng_api, tokenizer):
+    """Executes the tool calls, adds result to history, and sets state to decision. Records retrieval time and token count per call."""
     if not jobs_with_calls: return
     print(f"--- Executing tools for {len(jobs_with_calls)} jobs ---")
 
@@ -279,22 +288,39 @@ def process_tool_execution_stage(jobs_with_calls, local_api, searxng_api):
             job["current_step"] = "decision" # Go back to decision if tool call fails
             continue
 
+    def _append_retrieval_stat(job, content, time_seconds, source):
+        """Record one retrieval: time and token count of retrieved content."""
+        token_count = len(tokenizer.encode(content, add_special_tokens=False)) if tokenizer else 0
+        job.setdefault("retrieval_stats", []).append({
+            "time_seconds": round(time_seconds, 4),
+            "token_count": token_count,
+            "source": source,
+        })
+
     if local_tasks:
+        t0 = time.perf_counter()
         results = local_api.search_api_call([t["query"] for t in local_tasks])
+        elapsed = time.perf_counter() - t0
+        per_query_time = elapsed / len(local_tasks) if local_tasks else 0.0
         for task, result in zip(local_tasks, results):
             content = f"[Source: Local Wikipedia]\n{result}"
             task["job"]["messages"].append({"role": "tool", "content": content})
             task["job"]["current_step"] = "decision"
             task["job"]["search_count"] += 1
+            _append_retrieval_stat(task["job"], content, per_query_time, "local")
 
     if web_tasks:
+        t0 = time.perf_counter()
         results = searxng_api.search_api_call([t["query"] for t in web_tasks])
+        elapsed = time.perf_counter() - t0
+        per_query_time = elapsed / len(web_tasks) if web_tasks else 0.0
         for task, result in zip(web_tasks, results):
             content = f"[Source: Google Search]\n{result}"
             task["job"]["messages"].append({"role": "tool", "content": content})
             task["job"]["current_step"] = "decision"
             task["job"]["search_count"] += 1
-            
+            _append_retrieval_stat(task["job"], content, per_query_time, "web")
+
     # Clean up tool_calls after execution
     for job in jobs_with_calls:
         if "tool_calls" in job:
@@ -339,12 +365,18 @@ Please first provide your explanation, and then state your final verdict in the 
         verdict_input_ids.append(tokenizer.apply_chat_template(
             conversation=final_messages, tokenize=True, add_generation_prompt=True, enable_thinking=(not args.disable_thinking)))
     
+    t0 = time.perf_counter()
+    for j in evaluate_jobs:
+        j.setdefault("e2e_start_time", t0)
     verdict_responses = batched_sglang_generation(input_ids=verdict_input_ids, sampling_params=sampling_params, engine=engine)
-    
-    for job, response in zip(evaluate_jobs, verdict_responses):
+    t_end = time.perf_counter()
+
+    for i, (job, response) in enumerate(zip(evaluate_jobs, verdict_responses)):
         generated_text = response["text"]
         job["verdict_response"] = generated_text
         job["predicted_ranking"] = extract_final_ranking(generated_text)
+        job["e2e_end_time"] = t_end
+        job["total_sequence_tokens"] = len(verdict_input_ids[i]) + len(tokenizer.encode(generated_text, add_special_tokens=False))
 
 def process_evaluation_stage_scoring(evaluate_jobs, engine, tokenizer, args):
     """Processes jobs ready for final evaluation and verdict."""
@@ -379,12 +411,22 @@ Please first provide your explanation, and then state your final verdict in the 
             original_job_ids.append(i)
             original_ans_ids.append(j)
     
+    t0 = time.perf_counter()
+    for j in evaluate_jobs:
+        j.setdefault("e2e_start_time", t0)
     verdict_responses = batched_sglang_generation(input_ids=verdict_input_ids, sampling_params=sampling_params, engine=engine)
-    
-    for job_id, ans_id, response in zip(original_job_ids, original_ans_ids, verdict_responses):
+    t_end = time.perf_counter()
+
+    for j in evaluate_jobs:
+        j["e2e_end_time"] = t_end
+        j["total_sequence_tokens"] = 0
+    for k, (job_id, ans_id, response) in enumerate(zip(original_job_ids, original_ans_ids, verdict_responses)):
         generated_text = response["text"]
         evaluate_jobs[job_id]["original_item"]["answers"][ans_id]["verdict_response"] = generated_text
         evaluate_jobs[job_id]["original_item"]["answers"][ans_id]["predicted_scoring"] = extract_final_scoring(generated_text)
+        inp_len = len(verdict_input_ids[k])
+        out_len = len(tokenizer.encode(generated_text, add_special_tokens=False))
+        evaluate_jobs[job_id]["total_sequence_tokens"] += inp_len + out_len
 
 # --- Main Function ---
 def main():
@@ -406,7 +448,7 @@ def main():
 
     print(f"Loading data from {args.input_file}...")
     with open(args.input_file, "r", encoding="utf-8") as f:
-        input_data = [json.loads(line) for line in f if line.strip()]
+        input_data = [json.loads(line) for line in f if line.strip()][:50]
 
     # --- Prompt Templates ---
     ranking_search_prompt = f"""Your task is to determine the correct factual ranking of the provided answers. Based on the question and answers, think and identify what information you need and generate search queries using the available tools.
@@ -425,7 +467,7 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
     # --- Job Initialization ---
     jobs = []
     for i, item in enumerate(input_data):
-        job_base = {"id": i, "original_item": item, "search_count": 0, "search_results": []}
+        job_base = {"id": i, "original_item": item, "search_count": 0, "search_results": [], "retrieval_stats": []}
         if args.mode == "direct_gen":
             jobs.append({**job_base, "current_step": "evaluate"})
             continue
@@ -442,7 +484,9 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
     if args.mode == "retrieval":
         print("Initializing search APIs: Local (Wiki) and Searxng (Google)...")
         local_api = SearchAPILocal()
-        searxng_api = SearchAPISearxng(use_cache=(not args.disable_cache_for_serper))
+        # 优先使用新参数，如果未设置则回退到旧参数以保持向后兼容
+        use_cache = not (args.no_use_serper_cache or args.disable_cache_for_serper)
+        searxng_api = SearchAPISearxng(use_cache=use_cache)
 
         for turn in tqdm.tqdm(range(MAX_TURNS), desc="Agent Turns"):
             # Stage 1: DECIDE - Decide next action for jobs in 'decision' state
@@ -451,7 +495,7 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
 
             # Stage 2: EXECUTE - Run tool calls generated in the decision stage
             jobs_to_execute = [j for j in jobs if j.get("current_step") == "tool_execution"]
-            process_tool_execution_stage(jobs_to_execute, local_api, searxng_api)
+            process_tool_execution_stage(jobs_to_execute, local_api, searxng_api, tokenizer)
             
             active_jobs = [j for j in jobs if j.get("current_step") not in ["evaluate", "done"]]
             if not active_jobs:
@@ -487,16 +531,30 @@ Leverage both tools (`search_local` for Wikipedia, `search_web` for Google) and 
             result_item = job["original_item"]
             result_item["retrieval_path"] = job.get("messages", [])
             result_item["search_count"] = job.get("search_count", 0)
+            stats = job.get("retrieval_stats", [])
+            result_item["retrieval_stats"] = stats
+            result_item["total_retrieval_time_seconds"] = round(sum(s["time_seconds"] for s in stats), 4)
+            result_item["total_retrieval_tokens"] = sum(s["token_count"] for s in stats)
+            if job.get("e2e_start_time") is not None and job.get("e2e_end_time") is not None:
+                result_item["e2e_latency_seconds"] = round(job["e2e_end_time"] - job["e2e_start_time"], 4)
+            result_item["total_sequence_tokens"] = job.get("total_sequence_tokens")
             final_results.append(result_item)
     else:  # ranking
         for job in sorted(jobs, key=lambda x: x["id"]):
+            stats = job.get("retrieval_stats", [])
             result_item = {
                 **job["original_item"],
                 "search_messages": job.get("messages", []),
                 "verdict_response": job.get("verdict_response", ""),
                 "predicted_ranking": job.get("predicted_ranking", []),
                 "search_count": job.get("search_count", 0),
+                "retrieval_stats": stats,
+                "total_retrieval_time_seconds": round(sum(s["time_seconds"] for s in stats), 4),
+                "total_retrieval_tokens": sum(s["token_count"] for s in stats),
             }
+            if job.get("e2e_start_time") is not None and job.get("e2e_end_time") is not None:
+                result_item["e2e_latency_seconds"] = round(job["e2e_end_time"] - job["e2e_start_time"], 4)
+            result_item["total_sequence_tokens"] = job.get("total_sequence_tokens")
             final_results.append(result_item)
 
     # Write the results to the output file

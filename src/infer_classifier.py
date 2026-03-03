@@ -1,5 +1,6 @@
 import argparse
 import json
+import time
 import torch
 import tqdm
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -101,11 +102,13 @@ def main():
                 conversation = create_prompt_for_cls(item, answer_item, args.cls_input, tokenizer)
                 inputs = tokenizer(conversation, return_tensors="pt", truncation=True, max_length=args.max_length).to(model.device)
                 
-                # Get the raw logit score from the classifier
+                # Get the raw logit score from the classifier and record time
+                t0 = time.perf_counter()
                 score = model(**inputs).logits.item()
+                elapsed = time.perf_counter() - t0
                 answer_scores.append(score)
-                # Optionally save the score for each answer
                 answer_item["factuality_score"] = score
+                answer_item["infer_classifier_time_seconds"] = round(elapsed, 4)
 
             # 预测结果是得分最高的答案的索引
             prediction = answer_scores.index(max(answer_scores))

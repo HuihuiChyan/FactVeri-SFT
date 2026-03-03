@@ -16,13 +16,45 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 def load_corpus(corpus_path: str):
-    corpus = datasets.load_dataset(
-        'json', 
-        data_files=corpus_path,
-        split="train",
-        num_proc=4
-    )
-    return corpus
+    """
+    加载语料库。直接读取 JSONL 文件，跳过格式错误的行以避免缓存问题。
+    """
+    print(f"正在加载语料库: {corpus_path}")
+    
+    # 先统计总行数以显示准确的进度条
+    print("正在统计总行数...")
+    total_lines = 0
+    with open(corpus_path, 'r', encoding='utf-8', errors='ignore') as f:
+        for _ in tqdm(f, desc="统计行数"):
+            total_lines += 1
+    
+    print(f"总行数: {total_lines:,}")
+    print("开始读取数据...")
+    
+    corpus_list = []
+    error_count = 0
+    
+    with open(corpus_path, 'r', encoding='utf-8', errors='ignore') as f:
+        for line_num, line in enumerate(tqdm(f, total=total_lines, desc="读取语料库", unit="行"), 1):
+            line = line.strip()
+            if not line:  # 跳过空行
+                continue
+            
+            try:
+                data = json.loads(line)
+                corpus_list.append(data)
+            except json.JSONDecodeError as e:
+                error_count += 1
+                if error_count <= 10:  # 只打印前10个错误
+                    warnings.warn(f"第 {line_num} 行 JSON 格式错误，已跳过: {str(e)[:100]}")
+                # 跳过格式错误的行
+                continue
+    
+    if error_count > 0:
+        warnings.warn(f"总共跳过了 {error_count} 行格式错误的记录")
+    
+    print(f"语料库加载完成，共 {len(corpus_list):,} 条有效记录")
+    return corpus_list
 
 def read_jsonl(file_path):
     data = []
